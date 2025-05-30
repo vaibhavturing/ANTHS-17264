@@ -10,13 +10,14 @@ const rateLimit = require('express-rate-limit');
 const errorHandler = require('./middleware/errorHandler');
 const { notFoundHandler } = require('./middleware/notFoundHandler');
 const logger = require('./utils/logger');
+const config = require('./config/config');
 
 // Initialize express app
 const app = express();
 
 // Request logging middleware
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.originalUrl}`);
+  logger.http(`${req.method} ${req.originalUrl}`);
   next();
 });
 
@@ -24,32 +25,40 @@ app.use((req, res, next) => {
 app.use(helmet());
 
 // CORS configuration
-app.use(cors());
+app.use(cors({
+  origin: config.corsOrigin,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again after 15 minutes'
+  windowMs: config.security.rateLimit.windowMs, 
+  max: config.security.rateLimit.max,
+  message: 'Too many requests from this IP, please try again later'
 });
 app.use('/api', limiter);
 
 // Body parser middleware
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false }));
 
 // API Routes
-// app.use('/api/v1/auth', require('./routes/auth.routes'));
-// app.use('/api/v1/patients', require('./routes/patient.routes'));
-// app.use('/api/v1/appointments', require('./routes/appointment.routes'));
-// app.use('/api/v1/doctors', require('./routes/doctor.routes'));
-// app.use('/api/v1/medical-records', require('./routes/medicalRecord.routes'));
+// These routes will be implemented later
+app.use('/api/v1/auth', require('./routes/auth.routes'));
+app.use('/api/v1/patients', require('./routes/patient.routes'));
+app.use('/api/v1/appointments', require('./routes/appointment.routes'));
+app.use('/api/v1/doctors', require('./routes/doctor.routes'));
+app.use('/api/v1/medical-records', require('./routes/medicalRecord.routes'));
 
 // Health check route
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'success',
-    message: 'Healthcare Management API is running'
+    message: 'Healthcare Management API is running',
+    environment: config.env,
+    timestamp: new Date()
   });
 });
 
