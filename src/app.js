@@ -1,56 +1,86 @@
 /**
  * Healthcare Management Application
  * Express Application Configuration
+ * 
+ * Sets up the Express application with all middleware and routes
  */
 
 const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const errorHandler = require('./middleware/errorHandler');
-const { notFoundHandler } = require('./middleware/notFoundHandler');
-const logger = require('./utils/logger');
+const path = require('path');
+
+// Import configuration
 const config = require('./config/config');
 
-// Initialize express app
+// Import middleware
+const morganMiddleware = require('./middleware/morgan.middleware');
+const {
+  helmetMiddleware,
+  corsMiddleware,
+  rateLimitMiddleware,
+  xssMiddleware,
+  mongoSanitizeMiddleware,
+  hppMiddleware,
+  securityHeadersMiddleware
+} = require('./middleware/security.middleware');
+const compressionMiddleware = require('./middleware/compression.middleware');
+const {
+  jsonParserMiddleware,
+  urlencodedParserMiddleware
+} = require('./middleware/request-parser.middleware');
+const errorHandlerMiddleware = require('./middleware/error-handler.middleware');
+const notFoundMiddleware = require('./middleware/not-found.middleware');
+
+// Import routes
+const authRoutes = require('./routes/auth.routes');
+const patientRoutes = require('./routes/patient.routes');
+const doctorRoutes = require('./routes/doctor.routes');
+const appointmentRoutes = require('./routes/appointment.routes');
+const medicalRecordRoutes = require('./routes/medicalRecord.routes');
+
+// Create Express application
 const app = express();
 
-// Request logging middleware
-app.use((req, res, next) => {
-  logger.http(`${req.method} ${req.originalUrl}`);
-  next();
-});
+// Set security HTTP headers with Helmet
+app.use(helmetMiddleware());
+app.use(securityHeadersMiddleware());
+
+// Enable CORS
+app.use(corsMiddleware());
+
+// Request logging
+app.use(morganMiddleware());
+
+// Body parsers
+app.use(jsonParserMiddleware());
+app.use(urlencodedParserMiddleware());
 
 // Security middleware
-app.use(helmet());
+app.use(xssMiddleware());
+app.use(mongoSanitizeMiddleware());
+app.use(hppMiddleware());
 
-// CORS configuration
-app.use(cors({
-  origin: config.corsOrigin,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
+// Compression middleware
+app.use(compressionMiddleware());
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: config.security.rateLimit.windowMs, 
-  max: config.security.rateLimit.max,
-  message: 'Too many requests from this IP, please try again later'
-});
-app.use('/api', limiter);
-
-// Body parser middleware
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: false }));
+// Rate limiting (apply to API routes only)
+app.use('/api', rateLimitMiddleware());
 
 // API Routes
-// These routes will be implemented later
-app.use('/api/v1/auth', require('./routes/auth.routes'));
-app.use('/api/v1/patients', require('./routes/patient.routes'));
-app.use('/api/v1/appointments', require('./routes/appointment.routes'));
-app.use('/api/v1/doctors', require('./routes/doctor.routes'));
-app.use('/api/v1/medical-records', require('./routes/medicalRecord.routes'));
+const apiRouter = express.Router();
+const apiVersion = 'v1';
+
+// Mount API version routes
+apiRouter.use(`/${apiVersion}/auth`, authRoutes);
+apiRouter.use(`/${apiVersion}/patients`, patientRoutes);
+apiRouter.use(`/${apiVersion}/doctors`, doctorRoutes);
+apiRouter.use(`/${apiVersion}/appointments`, appointmentRoutes);
+apiRouter.use(`/${apiVersion}/medical-records`, medicalRecordRoutes);
+
+// Mount API router to main app
+app.use('/api', apiRouter);
+
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Health check route
 app.get('/health', (req, res) => {
@@ -62,10 +92,10 @@ app.get('/health', (req, res) => {
   });
 });
 
-// 404 handler
-app.use(notFoundHandler);
+// Handle undefined routes (404)
+app.use(notFoundMiddleware);
 
-// Error handler middleware
-app.use(errorHandler);
+// Global error handling
+app.use(errorHandlerMiddleware);
 
 module.exports = app;
