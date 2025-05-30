@@ -7,6 +7,7 @@
 
 const express = require('express');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 
 // Import configuration
 const config = require('./config/config');
@@ -53,6 +54,9 @@ app.use(morganMiddleware());
 // Body parsers
 app.use(jsonParserMiddleware());
 app.use(urlencodedParserMiddleware());
+
+// Cookie parser
+app.use(cookieParser());
 
 // Security middleware
 app.use(xssMiddleware());
