@@ -1,143 +1,98 @@
-/**
- * Healthcare Management Application
- * Response Utility
- * 
- * Standardized response format for API endpoints
- */
+// src/utils/response.util.js
 
 const { StatusCodes } = require('http-status-codes');
 
 /**
- * Send a success response
- * 
- * @param {Object} res - Express response object
- * @param {Object} options - Response options
- * @param {String} options.message - Success message
- * @param {Object|Array} options.data - Response data
- * @param {Number} options.statusCode - HTTP status code
- * @param {Object} options.meta - Additional metadata (pagination, etc.)
- * @returns {Object} Express response
+ * Utility class for standardized API responses
  */
-const successResponse = (res, options = {}) => {
-  const {
-    message = 'Operation successful',
-    data = {},
-    statusCode = StatusCodes.OK,
-    meta = {}
-  } = options;
-
-  return res.status(statusCode).json({
-    success: true,
-    message,
-    data,
-    meta
-  });
-};
-
-/**
- * Send an error response
- * 
- * @param {Object} res - Express response object
- * @param {Object} options - Response options
- * @param {String} options.message - Error message
- * @param {Number} options.statusCode - HTTP status code
- * @param {Object} options.errors - Validation errors
- * @returns {Object} Express response
- */
-const errorResponse = (res, options = {}) => {
-  const {
-    message = 'An error occurred',
-    statusCode = StatusCodes.INTERNAL_SERVER_ERROR,
-    errors = null
-  } = options;
-
-  const responseBody = {
-    success: false,
-    message
-  };
-
-  if (errors) {
-    responseBody.errors = errors;
+class ApiResponse {
+  /**
+   * Create a success response
+   * @param {Object} res - Express response object
+   * @param {*} data - Response data
+   * @param {string} message - Success message
+   * @param {number} statusCode - HTTP status code
+   * @returns {Object} Express response
+   */
+  static success(res, data = null, message = 'Operation successful', statusCode = StatusCodes.OK) {
+    const response = {
+      success: true,
+      message
+    };
+    
+    if (data !== null) {
+      response.data = data;
+    }
+    
+    return res.status(statusCode).json(response);
   }
-
-  return res.status(statusCode).json(responseBody);
-};
-
-/**
- * Send a created response (201)
- * 
- * @param {Object} res - Express response object
- * @param {Object} options - Response options
- * @param {String} options.message - Success message
- * @param {Object} options.data - Created resource data
- * @returns {Object} Express response
- */
-const createdResponse = (res, options = {}) => {
-  const {
-    message = 'Resource created successfully',
-    data = {}
-  } = options;
-
-  return successResponse(res, {
-    message,
-    data,
-    statusCode: StatusCodes.CREATED
-  });
-};
-
-/**
- * Send a no content response (204)
- * 
- * @param {Object} res - Express response object
- * @returns {Object} Express response
- */
-const noContentResponse = (res) => {
-  return res.status(StatusCodes.NO_CONTENT).end();
-};
-
-/**
- * Send a pagination response
- * 
- * @param {Object} res - Express response object
- * @param {Object} options - Response options
- * @param {String} options.message - Success message
- * @param {Array} options.data - Paginated data
- * @param {Number} options.totalCount - Total count of records
- * @param {Number} options.page - Current page
- * @param {Number} options.limit - Page size
- * @returns {Object} Express response
- */
-const paginatedResponse = (res, options = {}) => {
-  const {
-    message = 'Data retrieved successfully',
-    data = [],
-    totalCount = 0,
-    page = 1,
-    limit = 10
-  } = options;
-
-  const totalPages = Math.ceil(totalCount / limit);
   
-  return successResponse(res, {
-    message,
-    data,
-    meta: {
+  /**
+   * Create a response for created resource
+   * @param {Object} res - Express response object
+   * @param {*} data - Created resource data
+   * @param {string} message - Success message
+   * @returns {Object} Express response
+   */
+  static created(res, data = null, message = 'Resource created successfully') {
+    return ApiResponse.success(res, data, message, StatusCodes.CREATED);
+  }
+  
+  /**
+   * Create a response for no content
+   * @param {Object} res - Express response object
+   * @returns {Object} Express response
+   */
+  static noContent(res) {
+    return res.status(StatusCodes.NO_CONTENT).end();
+  }
+  
+  /**
+   * Create a paginated response
+   * @param {Object} res - Express response object
+   * @param {Array} data - Paginated items
+   * @param {Object} pagination - Pagination metadata
+   * @param {string} message - Success message
+   * @returns {Object} Express response
+   */
+  static paginated(res, data, pagination, message = 'Data retrieved successfully') {
+    const response = {
+      success: true,
+      message,
+      data,
       pagination: {
-        totalCount,
-        totalPages,
-        currentPage: page,
-        pageSize: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
+        total: pagination.total,
+        page: pagination.page,
+        limit: pagination.limit,
+        pages: Math.ceil(pagination.total / pagination.limit)
+      }
+    };
+    
+    // Add links if needed
+    if (pagination.page > 1 || pagination.page < response.pagination.pages) {
+      response.pagination.links = {};
+      
+      // Generate the base URL (without query params)
+      const baseUrl = `${res.req.protocol}://${res.req.get('host')}${res.req.path}`;
+      
+      // Create a URLSearchParams object from the request query
+      const query = new URLSearchParams(res.req.query);
+      
+      // Add previous page link if not on first page
+      if (pagination.page > 1) {
+        query.set('page', pagination.page - 1);
+        response.pagination.links.prev = `${baseUrl}?${query.toString()}`;
+      }
+      
+      // Add next page link if not on last page
+      if (pagination.page < response.pagination.pages) {
+        query.set('page', pagination.page + 1);
+        response.pagination.links.next = `${baseUrl}?${query.toString()}`;
       }
     }
-  });
-};
+    
+    return res.status(StatusCodes.OK).json(response);
+  }
+}
 
-module.exports = {
-  successResponse,
-  errorResponse,
-  createdResponse,
-  noContentResponse,
-  paginatedResponse
-};
+module.exports = ApiResponse;

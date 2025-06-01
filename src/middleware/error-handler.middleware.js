@@ -1,178 +1,188 @@
-/**
- * Healthcare Management Application
- * Error Handler Middleware
- * 
- * Global error handling middleware to process errors and send appropriate responses
- */
+// src/middleware/error-handler.middleware.js
 
 const { StatusCodes } = require('http-status-codes');
+const mongoose = require('mongoose');
+const Joi = require('joi');
 const logger = require('../utils/logger');
+const { 
+  BaseError, 
+  ValidationError, 
+  DatabaseError,
+  ApiError,
+  NotFoundError
+} = require('../utils/errors');
 const config = require('../config/config');
 
 /**
- * Handle MongoDB validation errors
- * @param {Error} err - Error object
- * @returns {Object} Formatted error object
- */
-const handleValidationError = (err) => {
-  const errors = Object.values(err.errors).map((el) => el.message);
-  const message = `Validation failed: ${errors.join('. ')}`;
-  return { 
-    message, 
-    statusCode: StatusCodes.BAD_REQUEST,
-    errors: Object.keys(err.errors).reduce((acc, key) => {
-      acc[key] = err.errors[key].message;
-      return acc;
-    }, {})
-  };
-};
-
-/**
- * Handle JWT errors
- * @param {Error} err - Error object
- * @returns {Object} Formatted error object
- */
-const handleJWTError = () => {
-  return { 
-    message: 'Invalid token. Please log in again!', 
-    statusCode: StatusCodes.UNAUTHORIZED 
-  };
-};
-
-/**
- * Handle JWT expired errors
- * @returns {Object} Formatted error object
- */
-const handleJWTExpiredError = () => {
-  return { 
-    message: 'Your token has expired! Please log in again.', 
-    statusCode: StatusCodes.UNAUTHORIZED 
-  };
-};
-
-/**
- * Handle duplicate key errors
- * @param {Error} err - Error object
- * @returns {Object} Formatted error object
- */
-const handleDuplicateFieldsError = (err) => {
-  const value = err.message.match(/(["'])(\\?.)*?\1/)[0];
-  const message = `Duplicate field value: ${value}. Please use another value!`;
-  return { message, statusCode: StatusCodes.CONFLICT };
-};
-
-/**
- * Handle CastError (invalid MongoDB ObjectId)
- * @param {Error} err - Error object
- * @returns {Object} Formatted error object
- */
-const handleCastError = (err) => {
-  const message = `Invalid ${err.path}: ${err.value}.`;
-  return { message, statusCode: StatusCodes.BAD_REQUEST };
-};
-
-/**
  * Global error handler middleware
- * @param {Error} err - Error object
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
  */
-const errorHandlerMiddleware = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
-  error.statusCode = err.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
-  error.isOperational = err.isOperational || false;
-  error.errors = err.errors;
+module.exports = (err, req, res, next) => {
+  let error = err;
+  
+  // Log the original error with stack trace
+  logError(req, error);
+  
+  // Convert various error types to our standardized error classes
+  error = normalizeError(error);
+  
+  // Send response based on the error
+  sendErrorResponse(res, error);
+};
 
-  // Log error for debugging and monitoring
-  const logLevel = error.statusCode >= 500 ? 'error' : 'warn';
-  const logMessage = `${req.method} ${req.path} | ${error.statusCode} | ${error.message}`;
-  const logMeta = {
-    ip: req.ip,
+/**
+ * Log appropriate error information
+ * @param {Object} req - Express request object
+ * @param {Error} error - Error object
+ */
+function logError(req, error) {
+  // Log at appropriate level based on status code and operational status
+  const logPayload = {
+    url: req.originalUrl,
     method: req.method,
-    path: req.path,
-    statusCode: error.statusCode,
-    errorName: err.name,
-    userId: req.user?.id || 'unauthenticated',
-    stack: config.env !== 'production' ? err.stack : undefined
+    ip: req.ip,
+    body: sanitizeRequestBody(req.body),
+    userId: req.user?.id
   };
   
-  logger.log(logLevel, logMessage, logMeta);
-
-  // Handle specific error types
-  if (err.name === 'ValidationError') {
-    const validationError = handleValidationError(err);
-    error.statusCode = validationError.statusCode;
-    error.message = validationError.message;
-    error.errors = validationError.errors;
-  }
-
-  if (err.code === 11000) {
-    const duplicateError = handleDuplicateFieldsError(err);
-    error.statusCode = duplicateError.statusCode;
-    error.message = duplicateError.message;
-  }
-
-  if (err.name === 'CastError') {
-    const castError = handleCastError(err);
-    error.statusCode = castError.statusCode;
-    error.message = castError.message;
-  }
-
-  if (err.name === 'JsonWebTokenError') {
-    const jwtError = handleJWTError();
-    error.statusCode = jwtError.statusCode;
-    error.message = jwtError.message;
-  }
-
-  if (err.name === 'TokenExpiredError') {
-    const tokenError = handleJWTExpiredError();
-    error.statusCode = tokenError.statusCode;
-    error.message = tokenError.message;
-  }
-
-  // Handle file upload errors
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    error.statusCode = StatusCodes.BAD_REQUEST;
-    error.message = 'File too large. Maximum size allowed is 5MB.';
-  }
-
-  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-    error.statusCode = StatusCodes.BAD_REQUEST;
-    error.message = 'Too many files uploaded or invalid field name.';
-  }
-
-  // Development vs Production error responses
-  if (config.env === 'development') {
-    return res.status(error.statusCode).json({
-      success: false,
-      message: error.message,
-      stack: err.stack,
-      error: err,
-      errors: error.errors
+  // Determine if this is a client error (4xx) or server error (5xx)
+  const isClientError = error.httpCode && error.httpCode < 500;
+  const isOperational = error instanceof BaseError && error.isOperational;
+  
+  if (isClientError && isOperational) {
+    // Client errors that are expected operational errors (log as warning)
+    logger.warn({
+      message: `Client error: ${error.message}`,
+      error: error instanceof BaseError ? error.toJSON(true) : error,
+      request: logPayload
     });
   } else {
-    // Don't leak error details in production
-    if (error.isOperational) {
-      return res.status(error.statusCode).json({
-        success: false,
+    // Server errors or non-operational errors (log as error)
+    logger.error({
+      message: `Server error: ${error.message}`,
+      error: error instanceof BaseError ? error.toJSON(true) : {
+        name: error.name,
         message: error.message,
-        errors: error.errors
-      });
-    } else {
-      // Programming or unknown errors: don't leak error details
-      logger.error('NON-OPERATIONAL ERROR 💥', {
-        error: err,
-        stack: err.stack
-      });
-      
-      return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        message: 'Something went wrong'
-      });
+        stack: error.stack
+      },
+      request: logPayload
+    });
+  }
+}
+
+/**
+ * Remove sensitive information from request body for logging
+ * @param {Object} body - Request body
+ * @returns {Object} Sanitized body
+ */
+function sanitizeRequestBody(body) {
+  if (!body) return undefined;
+  
+  // Create a copy we can modify
+  const sanitized = { ...body };
+  
+  // List of sensitive fields to redact
+  const sensitiveFields = [
+    'password', 'newPassword', 'currentPassword', 'passwordConfirmation',
+    'token', 'refreshToken', 'accessToken', 'authorization',
+    'ssn', 'socialSecurityNumber', 'creditCard', 'cardNumber', 'cvv',
+    'secret', 'privateKey'
+  ];
+  
+  // Redact sensitive fields
+  for (const field of sensitiveFields) {
+    if (sanitized[field]) {
+      sanitized[field] = '[REDACTED]';
     }
   }
-};
+  
+  // Recursively sanitize nested objects
+  for (const [key, value] of Object.entries(sanitized)) {
+    if (value && typeof value === 'object') {
+      sanitized[key] = sanitizeRequestBody(value);
+    }
+  }
+  
+  return sanitized;
+}
 
-module.exports = errorHandlerMiddleware;
+/**
+ * Normalize different error types into our standard error structure
+ * @param {Error} err - Original error
+ * @returns {BaseError} Normalized error
+ */
+function normalizeError(err) {
+  // If already a BaseError instance, use it directly
+  if (err instanceof BaseError) {
+    return err;
+  }
+  
+  // Handle Joi validation errors
+  if (err.isJoi) {
+    return ValidationError.fromJoiError(err);
+  }
+  
+  // Handle Mongoose validation errors
+  if (err instanceof mongoose.Error.ValidationError) {
+    return ValidationError.fromMongooseError(err);
+  }
+  
+  // Handle Mongoose/MongoDB errors
+  if (err.name === 'MongoError' || err.name === 'MongoServerError') {
+    return DatabaseError.fromMongoError(err);
+  }
+  
+  // Handle Mongoose CastError (usually invalid ObjectId)
+  if (err instanceof mongoose.Error.CastError) {
+    if (err.kind === 'ObjectId') {
+      return NotFoundError.forResource(
+        err.model ? err.model.modelName.toLowerCase() : 'resource',
+        err.value
+      );
+    }
+    return ValidationError.fromMongooseError(err);
+  }
+  
+  // Handle SyntaxError (usually invalid JSON)
+  if (err instanceof SyntaxError && err.status === 400) {
+    return ApiError.badRequest('Invalid request format');
+  }
+  
+  // Default to internal server error
+  return ApiError.internal(
+    err.message || 'An unexpected error occurred',
+    config.env !== 'production' ? err : undefined
+  );
+}
+
+/**
+ * Send appropriate error response
+ * @param {Object} res - Express response object
+ * @param {BaseError} error - Normalized error object
+ */
+function sendErrorResponse(res, error) {
+  // Default to internal server error if no status code
+  const statusCode = error.httpCode || StatusCodes.INTERNAL_SERVER_ERROR;
+  
+  // Get sanitized error for response
+  const errorResponse = error.toResponse();
+  
+  // Add error code if available
+  if (error.code) {
+    errorResponse.error.code = error.code;
+  }
+  
+  // Clean up sensitive information for security
+  // Added security measure - clear any auth headers in 500 responses
+  if (statusCode >= 500) {
+    res.removeHeader('Authorization');
+  }
+  
+  // In production, sanitize all 500 errors to a generic message
+  if (statusCode >= 500 && config.env === 'production') {
+    errorResponse.error.message = 'Internal server error';
+    delete errorResponse.error.details;
+  }
+  
+  // Send the error response
+  res.status(statusCode).json(errorResponse);
+}

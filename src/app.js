@@ -7,6 +7,9 @@
 
 const express = require('express');
 const path = require('path');
+const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
 
 // Import configuration
@@ -63,8 +66,16 @@ app.use(xssMiddleware());
 app.use(mongoSanitizeMiddleware());
 app.use(hppMiddleware());
 
+// Set security HTTP headers
+app.use(helmet());
+
+// Set CORS options
+app.use(cors());
+
+
 // Compression middleware
 app.use(compressionMiddleware());
+
 
 // Rate limiting (apply to API routes only)
 app.use('/api', rateLimitMiddleware());
@@ -96,8 +107,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Handle undefined routes (404)
-app.use(notFoundMiddleware);
 
 // Global error handling
 app.use(errorHandlerMiddleware);
