@@ -1,7 +1,22 @@
+// src/config/config.js
+
+/**
+ * Enhanced application configuration with security settings
+ * 
+ * Changes:
+ * - Added comprehensive security configuration section
+ * - Added feature flags for healthcare-specific functionality
+ * - Added security contact information
+ * - Added Redis configuration for production environments
+ * - Enhanced CORS configuration
+ * - Added admin and general IP whitelist settings
+ */
+
 const path = require('path');
 const dotenv = require('dotenv');
 const Joi = require('joi');
 const logger = require('../utils/logger');
+const { envSchema } = require('../utils/envSchema');
 
 // Determine environment from NODE_ENV
 const environment = process.env.NODE_ENV || 'development';
@@ -23,7 +38,7 @@ const envVarsSchema = Joi.object()
       .default('development'),
     PORT: Joi.number().default(5000),
     API_VERSION: Joi.string().default('v1'),
-
+    
     // Database configuration
     MONGODB_URI: Joi.string().required()
       .description('MongoDB connection string'),
@@ -41,7 +56,7 @@ const envVarsSchema = Joi.object()
     MONGODB_HEALTH_CHECK_INTERVAL: Joi.number()
       .default(30000)
       .description('MongoDB health check interval in ms'),
-
+      
     // JWT configuration
     JWT_SECRET: Joi.string().required()
       .description('JWT secret key'),
@@ -51,7 +66,7 @@ const envVarsSchema = Joi.object()
     JWT_REFRESH_EXPIRATION: Joi.string()
       .default('7d')
       .description('JWT refresh token expiration time'),
-
+      
     // Logging configuration
     LOG_LEVEL: Joi.string()
       .valid('error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly')
@@ -61,14 +76,43 @@ const envVarsSchema = Joi.object()
       .valid('combined', 'common', 'dev', 'short', 'tiny')
       .default('dev')
       .description('Log format for HTTP requests'),
-
-    // Security / Rate limit configuration (optional, can be set via env)
+    
+    // Redis configuration
+    REDIS_ENABLED: Joi.boolean().default(false),
+    REDIS_HOST: Joi.string().when('REDIS_ENABLED', {
+      is: true,
+      then: Joi.required(),
+      otherwise: Joi.optional()
+    }),
+    REDIS_PORT: Joi.number().when('REDIS_ENABLED', {
+      is: true,
+      then: Joi.required(),
+      otherwise: Joi.optional()
+    }),
+    REDIS_PASSWORD: Joi.string().allow('').optional(),
+    REDIS_USERNAME: Joi.string().allow('').optional(),
+    
+    // Security configuration
+    CORS_WHITELIST: Joi.string()
+      .description('Comma separated list of allowed origins for CORS'),
+    ADMIN_IP_WHITELIST: Joi.string()
+      .description('Comma separated list of allowed IPs for admin operations'),
+    IP_WHITELIST: Joi.string()
+      .description('Comma separated list of allowed IPs for sensitive operations'),
     RATE_LIMIT_WINDOW_MS: Joi.number()
-      .default(15 * 60 * 1000)
-      .description('Rate limit window in ms'),
+      .default(900000)
+      .description('Rate limiting window in milliseconds (default: 15 minutes)'),
     RATE_LIMIT_MAX: Joi.number()
       .default(100)
-      .description('Max requests per window per IP'),
+      .description('Maximum requests per rate limit window'),
+    SECURITY_CONTACT_EMAIL: Joi.string()
+      .email()
+      .description('Email address for security issues'),
+    
+    // Feature flags
+    FEATURE_TELEMEDICINE: Joi.boolean().default(false),
+    FEATURE_ANALYTICS: Joi.boolean().default(false),
+    FEATURE_AUDIT_LOGGING: Joi.boolean().default(true),
   })
   .unknown();
 
@@ -79,12 +123,18 @@ if (error) {
   throw new Error(`Config validation error: ${error.message}`);
 }
 
+// Parse string arrays from environment variables
+const parseStringArray = (envStr) => {
+  if (!envStr) return [];
+  return envStr.split(',').map(item => item.trim());
+};
+
 // Construct the config object
 const config = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
   apiVersion: envVars.API_VERSION,
-
+  
   db: {
     uri: envVars.MONGODB_URI,
     dbName: envVars.MONGODB_DB_NAME,
@@ -93,23 +143,47 @@ const config = {
     retryInterval: envVars.MONGODB_RETRY_INTERVAL,
     healthCheckInterval: envVars.MONGODB_HEALTH_CHECK_INTERVAL
   },
-
+  
   jwt: {
     secret: envVars.JWT_SECRET,
     accessExpiration: envVars.JWT_ACCESS_EXPIRATION,
     refreshExpiration: envVars.JWT_REFRESH_EXPIRATION
   },
-
+  
   logging: {
     level: envVars.LOG_LEVEL,
-    format: envVars.LOG_FORMAT
+    format: envVars.LOG_FORMAT,
+    logResponses: envVars.NODE_ENV !== 'production'
   },
-
+  
+  // Redis configuration
+  redis: {
+    enabled: envVars.REDIS_ENABLED,
+    host: envVars.REDIS_HOST,
+    port: envVars.REDIS_PORT,
+    password: envVars.REDIS_PASSWORD,
+    username: envVars.REDIS_USERNAME
+  },
+  
+  // Security configuration
   security: {
+    cors: {
+      whitelist: parseStringArray(envVars.CORS_WHITELIST)
+    },
+    adminIpWhitelist: parseStringArray(envVars.ADMIN_IP_WHITELIST),
+    ipWhitelist: parseStringArray(envVars.IP_WHITELIST),
     rateLimit: {
       windowMs: envVars.RATE_LIMIT_WINDOW_MS,
       max: envVars.RATE_LIMIT_MAX
-    }
+    },
+    contactEmail: envVars.SECURITY_CONTACT_EMAIL
+  },
+  
+  // Feature flags
+  features: {
+    telemedicine: envVars.FEATURE_TELEMEDICINE,
+    analytics: envVars.FEATURE_ANALYTICS,
+    auditLogging: envVars.FEATURE_AUDIT_LOGGING
   }
 };
 

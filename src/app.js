@@ -1,122 +1,121 @@
-/**
- * Healthcare Management Application
- * Express Application Configuration
- * 
- * Sets up the Express application with all middleware and routes
- */
-
 const express = require('express');
-const path = require('path');
-const cors = require('cors');
-const helmet = require('helmet');
 const compression = require('compression');
-const cookieParser = require('cookie-parser');
-
-
-// Import middleware
-const responseWrapper = require('./middleware/response-wrapper.middleware');
-const requestParser = require('./middleware/request-parser.middleware');
-const securityMiddleware = require('./middleware/security.middleware');
-const errorHandler = require('./middleware/error-handler.middleware');
-const notFoundHandler = require('./middleware/not-found.middleware');
-
-// Import configuration
 const config = require('./config/config');
 
 // Import middleware
-const morganMiddleware = require('./middleware/morgan.middleware');
-const {
-  helmetMiddleware,
-  corsMiddleware,
-  rateLimitMiddleware,
-  xssMiddleware,
-  mongoSanitizeMiddleware,
-  hppMiddleware,
-  securityHeadersMiddleware
-} = require('./middleware/security.middleware');
-const compressionMiddleware = require('./middleware/compression.middleware');
 const {
   jsonParserMiddleware,
-  urlencodedParserMiddleware
+  urlencodedParserMiddleware,
+  fileUpload
 } = require('./middleware/request-parser.middleware');
-const errorHandlerMiddleware = require('./middleware/error-handler.middleware');
-const notFoundMiddleware = require('./middleware/not-found.middleware');
 
-// Import routes
-const authRoutes = require('./routes/auth.routes');
-const patientRoutes = require('./routes/patient.routes');
-const doctorRoutes = require('./routes/doctor.routes');
-const appointmentRoutes = require('./routes/appointment.routes');
-const medicalRecordRoutes = require('./routes/medicalRecord.routes');
+const securityMiddleware = require('./middleware/security.middleware');
+const morganMiddleware = require('./middleware/morgan.middleware');
+const securityAuditLogger = require('./middleware/audit-logger.middleware');
 
-// Create Express application
+const {
+  dynamicRateLimiter,
+  authLimiter,
+  adminLimiter
+} = require('./middleware/rate-limit.middleware');
+
+// Fix: Destructure adminIpWhitelist from the exported object
+const { adminIpWhitelist } = require('./middleware/ip-whitelist.middleware');
+
+const responseWrapper = require('./middleware/response-wrapper.middleware');
+
+const routes = require('./routes');
+const notFoundHandler = require('./middleware/not-found.middleware');
+const errorHandler = require('./middleware/error-handler.middleware');
+
 const app = express();
 
-// Set security HTTP headers with Helmet
-app.use(helmetMiddleware());
-app.use(securityHeadersMiddleware());
+// ✅ Apply security middleware (if array, spread it)
+if (Array.isArray(securityMiddleware)) {
+  app.use(...securityMiddleware);
+} else {
+  app.use(securityMiddleware);
+}
 
-// Enable CORS
-app.use(corsMiddleware());
-
-// Request logging
-app.use(morganMiddleware());
-
-// Body parsers
+// Parse request bodies
 app.use(jsonParserMiddleware());
 app.use(urlencodedParserMiddleware());
+app.use(fileUpload.any()); // Accept all file uploads
 
-// Cookie parser
-app.use(cookieParser());
+// Apply compression
+app.use(compression());
 
-// Security middleware
-app.use(xssMiddleware());
-app.use(mongoSanitizeMiddleware());
-app.use(hppMiddleware());
+// Logging middleware
+app.use(morganMiddleware);
 
-// Set security HTTP headers
-app.use(helmet());
+// Apply security audit logging if enabled
+// if (config.features?.auditLogging) {
+//   app.use(securityAuditLogger);
+// }
 
-// Set CORS options
-app.use(cors());
+// ✅ Rate Limiting and Access Controls
 
+// General dynamic rate limiter for all API routes
+app.use(`/api/${config.apiVersion}`, dynamicRateLimiter);
 
-// Compression middleware
-app.use(compressionMiddleware());
+// Stricter limiter for authentication routes
+app.use(`/api/${config.apiVersion}/auth`, authLimiter);
 
+// Admin IP whitelist check
+app.use(`/api/${config.apiVersion}/admin`, adminIpWhitelist);
 
-// Rate limiting (apply to API routes only)
-app.use('/api', rateLimitMiddleware());
+// Response wrapper middleware for consistent API output
+app.use(`/api/${config.apiVersion}`, responseWrapper({
+  defaultMessages: {
+    list: 'Data retrieved successfully',
+    retrieve: 'Resource retrieved successfully',
+    created: 'Resource created successfully',
+    update: 'Resource updated successfully',
+    delete: 'Resource deleted successfully'
+  },
+  excludePaths: [
+    `/api/${config.apiVersion}/health`,
+    `/api/${config.apiVersion}/download`
+  ]
+}));
 
-// API Routes
-const apiRouter = express.Router();
-const apiVersion = 'v1';
+// API routes
+app.use(`/api/${config.apiVersion}`, routes);
 
-// Mount API version routes
-apiRouter.use(`/${apiVersion}/auth`, authRoutes);
-apiRouter.use(`/${apiVersion}/patients`, patientRoutes);
-apiRouter.use(`/${apiVersion}/doctors`, doctorRoutes);
-apiRouter.use(`/${apiVersion}/appointments`, appointmentRoutes);
-apiRouter.use(`/${apiVersion}/medical-records`, medicalRecordRoutes);
-
-// Mount API router to main app
-app.use('/api', apiRouter);
-
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-// Health check route
+// Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Healthcare Management API is running',
-    environment: config.env,
-    timestamp: new Date()
-  });
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Debug security info endpoint (non-production only)
+if (config.env !== 'production') {
+  app.get('/api/security-info', (req, res) => {
+    res.status(200).json({
+      environment: config.env,
+      securityHeaders: true,
+      csrfProtection: true,
+      rateLimit: {
+        enabled: true,
+        windowMs: config.security.rateLimit?.windowMs,
+        max: config.security.rateLimit?.max
+      },
+      cors: {
+        enabled: true,
+        whitelist: config.security.cors?.whitelist
+      },
+      ipWhitelisting: {
+        adminRoutes: config.security.adminIpWhitelist?.length > 0,
+        sensitiveOperations: config.security.ipWhitelist?.length > 0
+      },
+      auditLogging: config.features?.auditLogging
+    });
+  });
+}
 
-// Global error handling
-app.use(errorHandlerMiddleware);
+// 404 handler for unmatched routes
+app.use(notFoundHandler);
+
+// Centralized error handler
+app.use(errorHandler);
 
 module.exports = app;
