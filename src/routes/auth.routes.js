@@ -1,17 +1,10 @@
-/**
- * Healthcare Management Application
- * Authentication Routes
- * 
- * Defines routes for user authentication and account management
- */
-
 const express = require('express');
 const authController = require('../controllers/auth.controller');
 const { protect, extractUser } = require('../middleware/auth.middleware');
 const {
   registerValidator,
   loginValidator,
-  emailVerificationValidator,
+  emailVerificationValidator, 
   forgotPasswordValidator,
   resetPasswordValidator,
   changePasswordValidator,
@@ -19,6 +12,11 @@ const {
 } = require('../validators/auth.validator');
 
 const router = express.Router();
+
+// Debug logs to help you find which import is undefined
+console.log('extractUser:', typeof extractUser);
+console.log('registerValidator:', typeof registerValidator);
+console.log('authController.register:', typeof authController.register);
 
 // Public routes
 router.post('/register', extractUser, registerValidator, authController.register);
