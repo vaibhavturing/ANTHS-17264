@@ -12,6 +12,14 @@ const helmet = require('helmet');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 
+
+// Import middleware
+const responseWrapper = require('./middleware/response-wrapper.middleware');
+const requestParser = require('./middleware/request-parser.middleware');
+const securityMiddleware = require('./middleware/security.middleware');
+const errorHandler = require('./middleware/error-handler.middleware');
+const notFoundHandler = require('./middleware/not-found.middleware');
+
 // Import configuration
 const config = require('./config/config');
 

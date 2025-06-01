@@ -1,23 +1,61 @@
-// Example controller with error handling
 // src/controllers/patient.controller.js
+
+/**
+ * Patient controller with standardized responses
+ * Demonstrates usage of response utilities, pagination, and data transformation
+ */
 
 const { Patient } = require('../models');
 const asyncHandler = require('../utils/async-handler.util');
-const ApiResponse = require('../utils/response.util');
-const { 
-  ValidationError, 
-  DatabaseError, 
-  NotFoundError,
-  AuthorizationError 
-} = require('../utils/errors');
+const { applyPagination, buildPaginationResult } = require('../utils/pagination.util');
+const { transformResponse, applyHIPAAProtection } = require('../utils/transform.util');
+const { NotFoundError, AuthorizationError } = require('../utils/errors');
 
 /**
  * Get all patients with pagination and filtering
  */
 exports.getPatients = asyncHandler(async (req, res) => {
-  // Implement pagination, filtering, etc.
-  const patients = await Patient.find({});
-  return ApiResponse.success(res, patients, 'Patients retrieved successfully');
+  // Define fields allowed to be filtered
+  const filterConfig = {
+    allowedFields: ['status', 'gender', 'doctor', 'insuranceProvider', 'ageGroup'],
+    gender: { type: 'string', exactMatch: true },
+    doctor: { type: 'objectId' },
+    status: { type: 'string' },
+    age_gte: { type: 'number' },
+    age_lte: { type: 'number' }
+  };
+  
+  // Build and apply query with pagination
+  let query = Patient.find();
+  
+  // Apply pagination, sorting, and filtering
+  const paginatedQuery = applyPagination(query, req, {
+    allowedSortFields: ['lastName', 'firstName', 'dateOfBirth', 'createdAt', 'updatedAt'],
+    defaultSort: { lastName: 1, firstName: 1 }
+  });
+  
+  // Execute query with pagination
+  const result = await buildPaginationResult(
+    paginatedQuery,
+    Patient.countDocuments(paginatedQuery.filter),
+    paginatedQuery.query
+  );
+  
+  // Apply HIPAA protection and transformation
+  const transformedData = result.data.map(patient => 
+    applyHIPAAProtection(patient, req.user, {
+      audit: true,
+      auditService: req.app.get('auditService'),
+      action: 'list'
+    })
+  );
+  
+  // Return paginated response with transformed data
+  return res.paginated(
+    transformedData,
+    result.pagination,
+    'Patients retrieved successfully'
+  );
 });
 
 /**
@@ -35,20 +73,36 @@ exports.getPatientById = asyncHandler(async (req, res) => {
     throw AuthorizationError.insufficientPermissions('patient', 'view');
   }
   
-  return ApiResponse.success(res, patient, 'Patient retrieved successfully');
+  // Apply HIPAA protection and transformation
+  const transformedPatient = applyHIPAAProtection(patient, req.user, {
+    audit: true,
+    auditService: req.app.get('auditService'),
+    action: 'view'
+  });
+  
+  // Return success response
+  return res.success(
+    transformedPatient,
+    'Patient retrieved successfully'
+  );
 });
 
 /**
  * Create a new patient
  */
 exports.createPatient = asyncHandler(async (req, res) => {
-  try {
-    const newPatient = await Patient.create(req.body);
-    return ApiResponse.created(res, newPatient, 'Patient created successfully');
-  } catch (error) {
-    // Let the global error handler handle this
-    throw error;
-  }
+  // Create new patient
+  const newPatient = await Patient.create(req.body);
+  
+  // Transform data for response
+  const transformedPatient = transformResponse(newPatient);
+  
+  // Return created response with location header
+  return res.created(
+    transformedPatient, 
+    'Patient created successfully',
+    { resourcePath: 'patients' }
+  );
 });
 
 /**
@@ -73,7 +127,13 @@ exports.updatePatient = asyncHandler(async (req, res) => {
     { new: true, runValidators: true }
   );
   
-  return ApiResponse.success(res, updatedPatient, 'Patient updated successfully');
+  // Transform data for response
+  const transformedPatient = transformResponse(updatedPatient);
+  
+  return res.success(
+    transformedPatient, 
+    'Patient updated successfully'
+  );
 });
 
 /**
@@ -93,7 +153,7 @@ exports.deletePatient = asyncHandler(async (req, res) => {
   
   await patient.remove();
   
-  return ApiResponse.noContent(res);
+  return res.noContent();
 });
 
 // Helper functions to check permissions
