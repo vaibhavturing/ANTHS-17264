@@ -1,135 +1,116 @@
-/**
- * Healthcare Management Application
- * Configuration Manager
- * 
- * Loads and validates environment variables for the application
- */
-
-const dotenv = require('dotenv');
 const path = require('path');
-const { envSchema } = require('../utils/envSchema');
+const dotenv = require('dotenv');
+const Joi = require('joi');
 const logger = require('../utils/logger');
 
-// Determine which .env file to load based on NODE_ENV
-const getEnvPath = () => {
-  const env = process.env.NODE_ENV || 'development';
-  
-  // Map environment to corresponding .env file
-  const envMap = {
-    development: '.env.development',
-    test: '.env.test',
-    production: '.env.production'
-  };
+// Determine environment from NODE_ENV
+const environment = process.env.NODE_ENV || 'development';
 
-  // Default to .env if specific file doesn't exist
-  return envMap[env] || '.env';
-};
+// Load environment variables based on the environment
+const envFile = path.resolve(process.cwd(), `.env.${environment}`);
+const envResult = dotenv.config({ path: envFile });
 
-// Load environment variables from the appropriate .env file
-const loadEnvVariables = () => {
-  const envPath = path.resolve(process.cwd(), getEnvPath());
-  
-  // Load environment variables from file
-  const result = dotenv.config({ path: envPath });
+if (envResult.error) {
+  logger.warn(`Environment file not found at ${envFile}, using .env file`);
+  dotenv.config(); // Load default .env file as fallback
+}
 
-  if (result.error) {
-    // Fallback to default .env if specific environment file is not found
-    const defaultEnvPath = path.resolve(process.cwd(), '.env');
-    dotenv.config({ path: defaultEnvPath });
-    
-    // Only throw error when no .env files can be found
-    if (result.error.code === 'ENOENT' && !require('fs').existsSync(defaultEnvPath)) {
-      throw new Error(`Environment file not found: ${envPath} or .env`);
+// Define validation schema for environment variables
+const envVarsSchema = Joi.object()
+  .keys({
+    NODE_ENV: Joi.string()
+      .valid('development', 'test', 'production')
+      .default('development'),
+    PORT: Joi.number().default(5000),
+    API_VERSION: Joi.string().default('v1'),
+
+    // Database configuration
+    MONGODB_URI: Joi.string().required()
+      .description('MongoDB connection string'),
+    MONGODB_DB_NAME: Joi.string()
+      .description('MongoDB database name'),
+    MONGODB_POOL_SIZE: Joi.number()
+      .default(10)
+      .description('MongoDB connection pool size'),
+    MONGODB_MAX_RETRIES: Joi.number()
+      .default(5)
+      .description('MongoDB max connection retry attempts'),
+    MONGODB_RETRY_INTERVAL: Joi.number()
+      .default(5000)
+      .description('MongoDB retry interval in ms'),
+    MONGODB_HEALTH_CHECK_INTERVAL: Joi.number()
+      .default(30000)
+      .description('MongoDB health check interval in ms'),
+
+    // JWT configuration
+    JWT_SECRET: Joi.string().required()
+      .description('JWT secret key'),
+    JWT_ACCESS_EXPIRATION: Joi.string()
+      .default('1h')
+      .description('JWT access token expiration time'),
+    JWT_REFRESH_EXPIRATION: Joi.string()
+      .default('7d')
+      .description('JWT refresh token expiration time'),
+
+    // Logging configuration
+    LOG_LEVEL: Joi.string()
+      .valid('error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly')
+      .default('info')
+      .description('Log level'),
+    LOG_FORMAT: Joi.string()
+      .valid('combined', 'common', 'dev', 'short', 'tiny')
+      .default('dev')
+      .description('Log format for HTTP requests'),
+
+    // Security / Rate limit configuration (optional, can be set via env)
+    RATE_LIMIT_WINDOW_MS: Joi.number()
+      .default(15 * 60 * 1000)
+      .description('Rate limit window in ms'),
+    RATE_LIMIT_MAX: Joi.number()
+      .default(100)
+      .description('Max requests per window per IP'),
+  })
+  .unknown();
+
+// Validate environment variables against schema
+const { value: envVars, error } = envVarsSchema.validate(process.env);
+
+if (error) {
+  throw new Error(`Config validation error: ${error.message}`);
+}
+
+// Construct the config object
+const config = {
+  env: envVars.NODE_ENV,
+  port: envVars.PORT,
+  apiVersion: envVars.API_VERSION,
+
+  db: {
+    uri: envVars.MONGODB_URI,
+    dbName: envVars.MONGODB_DB_NAME,
+    poolSize: envVars.MONGODB_POOL_SIZE,
+    maxRetries: envVars.MONGODB_MAX_RETRIES,
+    retryInterval: envVars.MONGODB_RETRY_INTERVAL,
+    healthCheckInterval: envVars.MONGODB_HEALTH_CHECK_INTERVAL
+  },
+
+  jwt: {
+    secret: envVars.JWT_SECRET,
+    accessExpiration: envVars.JWT_ACCESS_EXPIRATION,
+    refreshExpiration: envVars.JWT_REFRESH_EXPIRATION
+  },
+
+  logging: {
+    level: envVars.LOG_LEVEL,
+    format: envVars.LOG_FORMAT
+  },
+
+  security: {
+    rateLimit: {
+      windowMs: envVars.RATE_LIMIT_WINDOW_MS,
+      max: envVars.RATE_LIMIT_MAX
     }
   }
 };
-
-// Validate environment variables against schema
-const validateEnvVariables = () => {
-  const { error, value } = envSchema.validate(process.env, {
-    allowUnknown: true,
-    abortEarly: false,
-  });
-
-  if (error) {
-    const missingKeys = error.details.map(detail => detail.message).join('\n');
-    throw new Error(`Environment validation failed:\n${missingKeys}`);
-  }
-
-  return value;
-};
-
-// Initialize configuration
-const initializeConfig = () => {
-  try {
-    // Load variables from appropriate .env file
-    loadEnvVariables();
-    
-    // Validate the environment variables
-    const config = validateEnvVariables();
-    
-    // Log successful loading (without sensitive data)
-    logger.info(`Configuration loaded for ${config.NODE_ENV} environment`);
-    
-    return {
-      // Server
-      env: config.NODE_ENV,
-      port: config.PORT,
-      apiUrl: config.API_URL,
-      corsOrigin: config.CORS_ORIGIN.split(','),
-      
-      // Database
-      database: {
-        uri: config.MONGO_URI,
-        options: config.MONGO_OPTIONS,
-      },
-      
-      // JWT Authentication
-      jwt: {
-        secret: config.JWT_SECRET,
-        expiresIn: config.JWT_EXPIRES_IN,
-        cookieExpiresIn: config.JWT_COOKIE_EXPIRES_IN,
-      },
-      
-      // Logging
-      logging: {
-        level: config.LOG_LEVEL,
-        toFile: config.LOG_TO_FILE === 'true',
-      },
-      
-      // Security
-      security: {
-        bcryptSaltRounds: parseInt(config.BCRYPT_SALT_ROUNDS, 10),
-        rateLimit: {
-          windowMs: parseInt(config.RATE_LIMIT_WINDOW_MS, 10),
-          max: parseInt(config.RATE_LIMIT_MAX, 10),
-        },
-      },
-      
-      // Email
-      email: {
-        host: config.SMTP_HOST,
-        port: config.SMTP_PORT,
-        auth: {
-          user: config.SMTP_USERNAME,
-          pass: config.SMTP_PASSWORD,
-        },
-        from: config.EMAIL_FROM,
-      },
-      
-      // Third-party APIs
-      apis: {
-        paymentGateway: config.PAYMENT_GATEWAY_API_KEY,
-        notificationService: config.NOTIFICATION_SERVICE_KEY,
-      },
-    };
-  } catch (error) {
-    logger.error(`Configuration error: ${error.message}`);
-    process.exit(1);
-  }
-};
-
-// Export the configuration
-const config = initializeConfig();
 
 module.exports = config;

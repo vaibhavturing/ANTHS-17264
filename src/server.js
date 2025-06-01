@@ -1,50 +1,42 @@
-/**
- * Healthcare Management Application
- * Server Entry Point
- * 
- * Initializes and starts the Express server with proper error handling
- * and graceful shutdown
- */
+// src/server.js
 
 const http = require('http');
 const app = require('./app');
-const { connectDB } = require('./config/db');
-const logger = require('./utils/logger');
 const config = require('./config/config');
+const logger = require('./utils/logger');
+const dbConnection = require('./config/db');
+
+let server;
 
 /**
  * Normalize port into a number, string, or false
  */
-const normalizePort = (val) => {
+function normalizePort(val) {
   const port = parseInt(val, 10);
-
+  
   if (isNaN(port)) {
     return val; // Named pipe
   }
-
+  
   if (port >= 0) {
     return port; // Port number
   }
-
+  
   return false;
-};
-
-// Get port from config and normalize
-const port = normalizePort(config.port);
-
-// Create HTTP server
-const server = http.createServer(app);
+}
 
 /**
  * Event listener for HTTP server "error" event
  */
-const onError = (error) => {
+function onError(error) {
   if (error.syscall !== 'listen') {
     throw error;
   }
-
-  const bind = typeof port === 'string' ? `Pipe ${port}` : `Port ${port}`;
-
+  
+  const bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+    
   // Handle specific listen errors with friendly messages
   switch (error.code) {
     case 'EACCES':
@@ -58,113 +50,89 @@ const onError = (error) => {
     default:
       throw error;
   }
-};
+}
 
 /**
  * Event listener for HTTP server "listening" event
  */
-const onListening = () => {
+function onListening() {
   const addr = server.address();
-  const bind = typeof addr === 'string' ? `pipe ${addr}` : `port ${addr.port}`;
-  logger.info(`Server listening on ${bind} in ${config.env} mode`);
-};
+  const bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+    
+  logger.info(`Server: Listening on ${bind} in ${config.env} mode`);
+}
 
 /**
- * Start the server
+ * Graceful shutdown handler
  */
-const startServer = async () => {
+async function gracefulShutdown(signal) {
+  logger.info(`Server: Received ${signal}. Shutting down gracefully...`);
+  
+  // Close the HTTP server first
+  if (server) {
+    server.close(() => {
+      logger.info('Server: HTTP server closed');
+    });
+  }
+  
+  // Disconnect from database
   try {
-    // Connect to MongoDB
-    await connectDB();
+    await dbConnection.disconnect(signal);
+  } catch (error) {
+    logger.error(`Server: Error during database disconnection: ${error.message}`);
+  }
+  
+  // Force exit after timeout
+  setTimeout(() => {
+    logger.error('Server: Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 10000);
+}
 
+/**
+ * Handle process-level errors
+ */
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error(`Server: Unhandled Rejection at: ${promise}, reason: ${reason}`);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error(`Server: Uncaught Exception: ${error.message}`);
+  gracefulShutdown('uncaughtException');
+});
+
+// Set up process signal handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+/**
+ * Initialize server
+ */
+async function startServer() {
+  try {
+    // Connect to the database
+    await dbConnection.connect();
+    
+    // Get port from environment
+    const port = normalizePort(config.port);
+    app.set('port', port);
+    
+    // Create HTTP server
+    server = http.createServer(app);
+    
     // Listen on provided port, on all network interfaces
     server.listen(port);
     server.on('error', onError);
     server.on('listening', onListening);
-
-    // Handle graceful shutdown
-    setupGracefulShutdown();
-
-  } catch (err) {
-    logger.error(`Failed to start server: ${err.message}`);
+    
+    logger.info(`Server: Started in ${config.env} mode`);
+  } catch (error) {
+    logger.error(`Server: Failed to start: ${error.message}`);
     process.exit(1);
   }
-};
-
-/**
- * Setup graceful shutdown handlers
- */
-const setupGracefulShutdown = () => {
-  // Handle unhandled promise rejections
-  process.on('unhandledRejection', (err) => {
-    logger.error('UNHANDLED REJECTION! 💥');
-    logger.error(err);
-    
-    // Gracefully shutdown instead of abrupt termination
-    gracefulShutdown('unhandled rejection');
-  });
-
-  // Handle uncaught exceptions
-  process.on('uncaughtException', (err) => {
-    logger.error('UNCAUGHT EXCEPTION! 💥');
-    logger.error(err);
-    
-    // Uncaught exceptions are severe - terminate after cleanup
-    gracefulShutdown('uncaught exception');
-  });
-
-  // Handle SIGTERM signal (e.g., Heroku shutdown)
-  process.on('SIGTERM', () => {
-    logger.info('SIGTERM received. Shutting down gracefully');
-    gracefulShutdown('SIGTERM');
-  });
-
-  // Handle SIGINT signal (e.g., Ctrl+C)
-  process.on('SIGINT', () => {
-    logger.info('SIGINT received. Shutting down gracefully');
-    gracefulShutdown('SIGINT');
-  });
-};
-
-/**
- * Perform graceful shutdown
- * @param {string} source - The source of the shutdown signal
- */
-const gracefulShutdown = async (source) => {
-  logger.info(`Initiating graceful shutdown (${source})...`);
-  
-  try {
-    // Close the HTTP server (stop accepting new connections)
-    server.close(() => {
-      logger.info('HTTP server closed');
-    });
-
-    // Close database connection
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.connection.close();
-      logger.info('Database connection closed');
-    }
-
-    // Additional cleanup can be added here (e.g., close Redis connections)
-
-    logger.info('Graceful shutdown completed');
-
-    // Exit with different code based on source
-    if (['uncaught exception', 'unhandled rejection'].includes(source)) {
-      process.exit(1);
-    } else {
-      process.exit(0);
-    }
-  } catch (err) {
-    logger.error(`Error during graceful shutdown: ${err.message}`);
-    process.exit(1);
-  }
-};
-
-// Start the server if this is the main file
-if (require.main === module) {
-  startServer();
-} else {
-  // Export for testing
-  module.exports = { app, server, startServer };
 }
+
+// Start the server
+startServer();
