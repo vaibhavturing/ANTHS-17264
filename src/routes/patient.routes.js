@@ -1,73 +1,153 @@
+/**
+ * Patient Management Routes
+ * Handles patient records, demographics, and care management
+ */
+
 const express = require('express');
-const router = express.Router();
 const patientController = require('../controllers/patient.controller');
+const auth = require('../middleware/auth.middleware');
 const validate = require('../middleware/validate.middleware');
 const patientValidator = require('../validators/patient.validator');
-const { auth } = require('../middleware/auth.middleware');
-const asyncHandler = require('../utils/async-handler.util');
 
-// Get all patients (with pagination and filtering)
+const router = express.Router();
+
+/**
+ * @route GET /api/patients
+ * @desc Get a list of patients (paginated, filtered)
+ * @access Healthcare providers (doctors, nurses, admin)
+ */
 router.get(
   '/',
-  auth('view:patients'),
-  validate(patientValidator.getPatientsSchema),
-  asyncHandler(patientController.getPatients)
+  auth.requireAnyRole(['admin', 'doctor', 'nurse']),
+  validate(patientValidator.getPatientsQuery),
+  patientController.getPatients
 );
 
-// Get patient by ID
+/**
+ * @route GET /api/patients/:id
+ * @desc Get a single patient by ID
+ * @access Self (patient), assigned providers, or admin
+ */
 router.get(
-  '/:patientId',
-  auth('view:patient'),
-  validate(patientValidator.getPatientByIdSchema),
-  asyncHandler(patientController.getPatientById)
+  '/:id',
+  auth.requirePatientSelfOrProvider('id'), // Custom middleware for patient record access
+  patientController.getPatientById
 );
 
-// Create new patient
+/**
+ * @route POST /api/patients
+ * @desc Create a new patient record
+ * @access Admins, registration staff
+ */
 router.post(
   '/',
-  auth('create:patient'),
+  auth.requireAnyRole(['admin', 'registration']),
   validate(patientValidator.createPatientSchema),
-  asyncHandler(patientController.createPatient)
+  patientController.createPatient
 );
 
-// Update patient
+/**
+ * @route PUT /api/patients/:id
+ * @desc Update a patient's complete profile
+ * @access Admin, registration staff
+ */
 router.put(
-  '/:patientId',
-  auth('update:patient'),
+  '/:id',
+  auth.requireAnyRole(['admin', 'registration']),
   validate(patientValidator.updatePatientSchema),
-  asyncHandler(patientController.updatePatient)
+  patientController.updatePatient
 );
 
-// Delete patient
+/**
+ * @route PATCH /api/patients/:id
+ * @desc Partially update a patient profile
+ * @access Admin, registration staff, assigned providers
+ */
+router.patch(
+  '/:id',
+  auth.requirePatientSelfOrProvider('id'),
+  validate(patientValidator.partialUpdatePatientSchema),
+  patientController.partialUpdatePatient
+);
+
+/**
+ * @route DELETE /api/patients/:id
+ * @desc Delete a patient record (soft delete)
+ * @access Admin only
+ */
 router.delete(
-  '/:patientId',
-  auth('delete:patient'),
-  validate(patientValidator.deletePatientSchema),
-  asyncHandler(patientController.deletePatient)
+  '/:id',
+  auth.requireRole('admin'),
+  patientController.deletePatient
 );
 
-// Update patient medical condition
-router.put(
-  '/:patientId/medical-condition',
-  auth('update:patient-medical'),
-  validate(patientValidator.updateMedicalConditionSchema),
-  asyncHandler(patientController.updateMedicalCondition)
+/**
+ * @route GET /api/patients/:id/allergies
+ * @desc Get patient allergies
+ * @access Patient self, assigned providers, admin
+ */
+router.get(
+  '/:id/allergies',
+  auth.requirePatientSelfOrProvider('id'),
+  patientController.getPatientAllergies
 );
 
-// Update patient medication
+/**
+ * @route PUT /api/patients/:id/allergies
+ * @desc Update patient allergies
+ * @access Doctors, nurses, admin
+ */
 router.put(
-  '/:patientId/medication',
-  auth('update:patient-medical'),
-  validate(patientValidator.updateMedicationSchema),
-  asyncHandler(patientController.updateMedication)
+  '/:id/allergies',
+  auth.requireAnyRole(['doctor', 'nurse', 'admin']),
+  validate(patientValidator.updateAllergiesSchema),
+  patientController.updatePatientAllergies
 );
 
-// Update patient allergy
+/**
+ * @route GET /api/patients/:id/medications
+ * @desc Get patient medications
+ * @access Patient self, assigned providers, admin
+ */
+router.get(
+  '/:id/medications',
+  auth.requirePatientSelfOrProvider('id'),
+  patientController.getPatientMedications
+);
+
+/**
+ * @route PUT /api/patients/:id/medications
+ * @desc Update patient medications
+ * @access Doctors only (prescription authority)
+ */
 router.put(
-  '/:patientId/allergy',
-  auth('update:patient-medical'),
-  validate(patientValidator.updateAllergySchema),
-  asyncHandler(patientController.updateAllergy)
+  '/:id/medications',
+  auth.requireRole('doctor'),
+  validate(patientValidator.updateMedicationsSchema),
+  patientController.updatePatientMedications
+);
+
+/**
+ * @route GET /api/patients/:id/insurance
+ * @desc Get patient insurance information
+ * @access Patient self, billing staff, admin
+ */
+router.get(
+  '/:id/insurance',
+  auth.requireAnyRole(['admin', 'billing']),
+  patientController.getPatientInsurance
+);
+
+/**
+ * @route PUT /api/patients/:id/insurance
+ * @desc Update patient insurance information
+ * @access Billing staff, admin
+ */
+router.put(
+  '/:id/insurance',
+  auth.requireAnyRole(['admin', 'billing']),
+  validate(patientValidator.updateInsuranceSchema),
+  patientController.updatePatientInsurance
 );
 
 module.exports = router;

@@ -1,173 +1,515 @@
-// src/controllers/patient.controller.js
-
 /**
- * Patient controller with standardized responses
- * Demonstrates usage of response utilities, pagination, and data transformation
+ * Patient Controller
+ * Handles all patient-related operations with HIPAA compliance
  */
 
-const { Patient } = require('../models');
+const logger = require('../utils/logger');
 const asyncHandler = require('../utils/async-handler.util');
-const { applyPagination, buildPaginationResult } = require('../utils/pagination.util');
-const { transformResponse, applyHIPAAProtection } = require('../utils/transform.util');
-const { NotFoundError, AuthorizationError } = require('../utils/errors');
+const { success } = require('../utils/response.util');
+const Patient = require('../models/patient.model');
+const { NotFoundError } = require('../utils/errors/NotFoundError');
+const auditLogger = require('../utils/audit-logger');
 
 /**
  * Get all patients with pagination and filtering
  */
-exports.getPatients = asyncHandler(async (req, res) => {
-  // Define fields allowed to be filtered
-  const filterConfig = {
-    allowedFields: ['status', 'gender', 'doctor', 'insuranceProvider', 'ageGroup'],
-    gender: { type: 'string', exactMatch: true },
-    doctor: { type: 'objectId' },
-    status: { type: 'string' },
-    age_gte: { type: 'number' },
-    age_lte: { type: 'number' }
-  };
+const getPatients = asyncHandler(async (req, res) => {
+  // Extract query parameters
+  const { 
+    page = 1, 
+    limit = 10, 
+    search, 
+    insuranceProvider, 
+    doctorId,
+    sortBy = 'lastName',
+    sortOrder = 'asc'
+  } = req.query;
   
-  // Build and apply query with pagination
-  let query = Patient.find();
+  const skip = (page - 1) * limit;
   
-  // Apply pagination, sorting, and filtering
-  const paginatedQuery = applyPagination(query, req, {
-    allowedSortFields: ['lastName', 'firstName', 'dateOfBirth', 'createdAt', 'updatedAt'],
-    defaultSort: { lastName: 1, firstName: 1 }
-  });
+  // Build query filters
+  const query = {};
+  
+  if (search) {
+    query.$or = [
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { 'contactInformation.email': { $regex: search, $options: 'i' } },
+      { 'contactInformation.phone': { $regex: search, $options: 'i' } },
+      { 'medicalInformation.patientId': { $regex: search, $options: 'i' } }
+    ];
+  }
+  
+  if (insuranceProvider) {
+    query['insurance.provider'] = insuranceProvider;
+  }
+  
+  if (doctorId) {
+    query.assignedDoctors = doctorId;
+  }
+  
+  // Sort direction
+  const sortDirection = sortOrder === 'desc' ? -1 : 1;
   
   // Execute query with pagination
-  const result = await buildPaginationResult(
-    paginatedQuery,
-    Patient.countDocuments(paginatedQuery.filter),
-    paginatedQuery.query
-  );
+  const [patients, total] = await Promise.all([
+    Patient.find(query)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ [sortBy]: sortDirection })
+      .lean(),
+    Patient.countDocuments(query)
+  ]);
   
-  // Apply HIPAA protection and transformation
-  const transformedData = result.data.map(patient => 
-    applyHIPAAProtection(patient, req.user, {
-      audit: true,
-      auditService: req.app.get('auditService'),
-      action: 'list'
-    })
-  );
+  // Log the access to patient data
+  auditLogger.logDataAccess({
+    userId: req.user.id,
+    action: 'list',
+    resourceType: 'patient',
+    resourceId: 'multiple',
+    metadata: {
+      filters: { search, insuranceProvider, doctorId },
+      resultCount: patients.length
+    }
+  });
   
-  // Return paginated response with transformed data
-  return res.paginated(
-    transformedData,
-    result.pagination,
-    'Patients retrieved successfully'
-  );
+  // Calculate pagination metadata
+  const totalPages = Math.ceil(total / limit);
+  
+  return success(res, {
+    patients,
+    pagination: {
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages
+    }
+  });
 });
 
 /**
- * Get patient by ID
+ * Get a patient by ID
  */
-exports.getPatientById = asyncHandler(async (req, res) => {
-  const patient = await Patient.findById(req.params.id);
+const getPatientById = asyncHandler(async (req, res) => {
+  const patient = await Patient.findById(req.params.id).lean();
   
   if (!patient) {
-    throw NotFoundError.forResource('patient', req.params.id);
+    throw new NotFoundError('Patient not found');
   }
   
-  // Check if user has permission to view this patient
-  if (!canViewPatient(req.user, patient)) {
-    throw AuthorizationError.insufficientPermissions('patient', 'view');
-  }
-  
-  // Apply HIPAA protection and transformation
-  const transformedPatient = applyHIPAAProtection(patient, req.user, {
-    audit: true,
-    auditService: req.app.get('auditService'),
-    action: 'view'
+  // Log the access to patient data
+  auditLogger.logDataAccess({
+    userId: req.user.id,
+    action: 'view',
+    resourceType: 'patient',
+    resourceId: req.params.id,
+    metadata: {
+      isPatientSelf: req.user.patientId === req.params.id
+    }
   });
   
-  // Return success response
-  return res.success(
-    transformedPatient,
-    'Patient retrieved successfully'
-  );
+  return success(res, { patient });
 });
 
 /**
  * Create a new patient
  */
-exports.createPatient = asyncHandler(async (req, res) => {
+const createPatient = asyncHandler(async (req, res) => {
+  const {
+    userId,
+    firstName,
+    lastName,
+    dateOfBirth,
+    gender,
+    contactInformation,
+    emergencyContact,
+    medicalInformation,
+    insurance
+  } = req.body;
+  
   // Create new patient
-  const newPatient = await Patient.create(req.body);
+  const patient = new Patient({
+    userId,
+    firstName,
+    lastName,
+    dateOfBirth,
+    gender,
+    contactInformation,
+    emergencyContact,
+    medicalInformation,
+    insurance
+  });
   
-  // Transform data for response
-  const transformedPatient = transformResponse(newPatient);
+  await patient.save();
   
-  // Return created response with location header
-  return res.created(
-    transformedPatient, 
-    'Patient created successfully',
-    { resourcePath: 'patients' }
-  );
+  // Log the creation of patient data
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'create',
+    resourceType: 'patient',
+    resourceId: patient._id.toString(),
+    changes: {
+      changedFields: Object.keys(req.body)
+    }
+  });
+  
+  logger.info('New patient created', { patientId: patient._id });
+  
+  return success(res, { patient }, 201);
 });
 
 /**
- * Update patient
+ * Update a patient
  */
-exports.updatePatient = asyncHandler(async (req, res) => {
-  const patient = await Patient.findById(req.params.id);
+const updatePatient = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  const updateData = req.body;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId);
   
   if (!patient) {
-    throw NotFoundError.forResource('patient', req.params.id);
+    throw new NotFoundError('Patient not found');
   }
   
-  // Check if user has permission to update this patient
-  if (!canUpdatePatient(req.user, patient)) {
-    throw AuthorizationError.insufficientPermissions('patient', 'update');
-  }
+  // Save previous data for audit
+  const previousData = patient.toObject();
   
-  // Update patient
-  const updatedPatient = await Patient.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    { new: true, runValidators: true }
-  );
+  // Update all fields
+  Object.keys(updateData).forEach(key => {
+    patient[key] = updateData[key];
+  });
   
-  // Transform data for response
-  const transformedPatient = transformResponse(updatedPatient);
+  // Record modification timestamp
+  patient.updatedAt = new Date();
+  patient.updatedBy = req.user.id;
   
-  return res.success(
-    transformedPatient, 
-    'Patient updated successfully'
-  );
+  await patient.save();
+  
+  // Log the update of patient data
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'update',
+    resourceType: 'patient',
+    resourceId: patientId,
+    changes: {
+      changedFields: Object.keys(updateData),
+      previousData
+    }
+  });
+  
+  logger.info('Patient updated', { patientId });
+  
+  return success(res, { patient });
 });
 
 /**
- * Delete patient
+ * Partially update a patient
  */
-exports.deletePatient = asyncHandler(async (req, res) => {
-  const patient = await Patient.findById(req.params.id);
+const partialUpdatePatient = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  const updateData = req.body;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId);
   
   if (!patient) {
-    throw NotFoundError.forResource('patient', req.params.id);
+    throw new NotFoundError('Patient not found');
   }
   
-  // Check if user has permission to delete this patient
-  if (!canDeletePatient(req.user, patient)) {
-    throw AuthorizationError.hipaaViolation();
-  }
+  // Save previous data for audit
+  const previousData = patient.toObject();
   
-  await patient.remove();
+  // Update only the fields that are provided
+  Object.keys(updateData).forEach(key => {
+    patient[key] = updateData[key];
+  });
   
-  return res.noContent();
+  // Record modification timestamp
+  patient.updatedAt = new Date();
+  patient.updatedBy = req.user.id;
+  
+  await patient.save();
+  
+  // Log the partial update of patient data
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'partial_update',
+    resourceType: 'patient',
+    resourceId: patientId,
+    changes: {
+      changedFields: Object.keys(updateData),
+      previousData
+    }
+  });
+  
+  logger.info('Patient partially updated', { patientId, fields: Object.keys(updateData) });
+  
+  return success(res, { patient });
 });
 
-// Helper functions to check permissions
-function canViewPatient(user, patient) {
-  // Implement permission logic
-  return true; // Placeholder
-}
+/**
+ * Delete a patient (soft delete)
+ */
+const deletePatient = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId);
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Soft delete by setting to inactive
+  patient.active = false;
+  patient.deactivatedAt = new Date();
+  patient.deactivatedBy = req.user.id;
+  await patient.save();
+  
+  // Log the deletion of patient data
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'delete',
+    resourceType: 'patient',
+    resourceId: patientId
+  });
+  
+  logger.info('Patient deactivated (soft deleted)', { patientId });
+  
+  return success(res, { message: 'Patient successfully deleted' });
+});
 
-function canUpdatePatient(user, patient) {
-  // Implement permission logic
-  return true; // Placeholder
-}
+/**
+ * Get patient allergies
+ */
+const getPatientAllergies = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId)
+    .select('medicalInformation.allergies')
+    .lean();
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Log the access to patient allergies
+  auditLogger.logDataAccess({
+    userId: req.user.id,
+    action: 'view',
+    resourceType: 'patient_allergies',
+    resourceId: patientId
+  });
+  
+  return success(res, { 
+    allergies: patient.medicalInformation?.allergies || [] 
+  });
+});
 
-function canDeletePatient(user, patient) {
-  // Implement permission logic
-  return true; // Placeholder
-}
+/**
+ * Update patient allergies
+ */
+const updatePatientAllergies = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  const { allergies } = req.body;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId);
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Save previous allergies for audit
+  const previousAllergies = patient.medicalInformation?.allergies || [];
+  
+  // Update allergies
+  if (!patient.medicalInformation) {
+    patient.medicalInformation = {};
+  }
+  patient.medicalInformation.allergies = allergies;
+  patient.updatedAt = new Date();
+  patient.updatedBy = req.user.id;
+  
+  await patient.save();
+  
+  // Log the update of patient allergies
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'update',
+    resourceType: 'patient_allergies',
+    resourceId: patientId,
+    changes: {
+      previousAllergies,
+      newAllergies: allergies
+    }
+  });
+  
+  logger.info('Patient allergies updated', { patientId });
+  
+  return success(res, { 
+    allergies: patient.medicalInformation.allergies 
+  });
+});
+
+/**
+ * Get patient medications
+ */
+const getPatientMedications = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId)
+    .select('medicalInformation.medications')
+    .lean();
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Log the access to patient medications
+  auditLogger.logDataAccess({
+    userId: req.user.id,
+    action: 'view',
+    resourceType: 'patient_medications',
+    resourceId: patientId
+  });
+  
+  return success(res, { 
+    medications: patient.medicalInformation?.medications || [] 
+  });
+});
+
+/**
+ * Update patient medications
+ */
+const updatePatientMedications = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  const { medications } = req.body;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId);
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Save previous medications for audit
+  const previousMedications = patient.medicalInformation?.medications || [];
+  
+  // Update medications
+  if (!patient.medicalInformation) {
+    patient.medicalInformation = {};
+  }
+  patient.medicalInformation.medications = medications;
+  patient.updatedAt = new Date();
+  patient.updatedBy = req.user.id;
+  
+  await patient.save();
+  
+  // Log the update of patient medications (this is a prescription, so log as such)
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'prescribe',
+    resourceType: 'patient_medications',
+    resourceId: patientId,
+    changes: {
+      previousMedications,
+      newMedications: medications
+    }
+  });
+  
+  logger.info('Patient medications updated', { patientId });
+  
+  return success(res, { 
+    medications: patient.medicalInformation.medications 
+  });
+});
+
+/**
+ * Get patient insurance information
+ */
+const getPatientInsurance = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId)
+    .select('insurance')
+    .lean();
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Log the access to patient insurance info
+  auditLogger.logDataAccess({
+    userId: req.user.id,
+    action: 'view',
+    resourceType: 'patient_insurance',
+    resourceId: patientId
+  });
+  
+  return success(res, { 
+    insurance: patient.insurance || {} 
+  });
+});
+
+/**
+ * Update patient insurance information
+ */
+const updatePatientInsurance = asyncHandler(async (req, res) => {
+  const patientId = req.params.id;
+  const { insurance } = req.body;
+  
+  // Find patient
+  const patient = await Patient.findById(patientId);
+  
+  if (!patient) {
+    throw new NotFoundError('Patient not found');
+  }
+  
+  // Save previous insurance for audit
+  const previousInsurance = patient.insurance || {};
+  
+  // Update insurance
+  patient.insurance = insurance;
+  patient.updatedAt = new Date();
+  patient.updatedBy = req.user.id;
+  
+  await patient.save();
+  
+  // Log the update of patient insurance
+  auditLogger.logDataModification({
+    userId: req.user.id,
+    action: 'update',
+    resourceType: 'patient_insurance',
+    resourceId: patientId,
+    changes: {
+      previousInsurance,
+      newInsurance: insurance
+    }
+  });
+  
+  logger.info('Patient insurance updated', { patientId });
+  
+  return success(res, { 
+    insurance: patient.insurance 
+  });
+});
+
+module.exports = {
+  getPatients,
+  getPatientById,
+  createPatient,
+  updatePatient,
+  partialUpdatePatient,
+  deletePatient,
+  getPatientAllergies,
+  updatePatientAllergies,
+  getPatientMedications,
+  updatePatientMedications,
+  getPatientInsurance,
+  updatePatientInsurance
+};

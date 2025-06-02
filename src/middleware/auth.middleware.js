@@ -1,12 +1,8 @@
-const { User, ROLES } = require('../models/user.model');
-const { getTokenFromRequest, verifyToken } = require('../utils/auth.util');
-const { 
-  UnauthorizedError, 
-  ForbiddenError, 
-  BadRequestError 
-} = require('../utils/api-error.util');
-const logger = require('../utils/logger');
-const { StatusCodes } = require('http-status-codes');
+const { User, ROLES } = require("../models/user.model");
+const { getTokenFromRequest, verifyToken } = require("../utils/auth.util");
+const { UnauthorizedError, ForbiddenError, BadRequestError } = require("../utils/api-error.util");
+const logger = require("../utils/logger");
+const { StatusCodes } = require("http-status-codes");
 
 /**
  * Middleware to protect routes - requires authentication
@@ -15,25 +11,29 @@ const protect = async (req, res, next) => {
   try {
     const token = getTokenFromRequest(req);
     if (!token) {
-      return next(new UnauthorizedError('You are not logged in. Please log in to get access.'));
+      return next(new UnauthorizedError("You are not logged in. Please log in to get access."));
     }
+
     const decoded = await verifyToken(token);
-    const user = await User.findById(decoded.id).select('+passwordChangedAt');
+    const user = await User.findById(decoded.id).select("+passwordChangedAt");
+
     if (!user) {
-      return next(new UnauthorizedError('The user with this token no longer exists.'));
+      return next(new UnauthorizedError("The user with this token no longer exists."));
     }
+
     if (user.changedPasswordAfter && user.changedPasswordAfter(decoded.iat)) {
-      return next(new UnauthorizedError('Your password was recently changed. Please log in again.'));
+      return next(new UnauthorizedError("Your password was recently changed. Please log in again."));
     }
+
     if (user.accountLocked) {
-      const message = user.lockedUntil && user.lockedUntil > new Date()
-        ? `Your account is locked. Please try again after ${user.lockedUntil.toLocaleString()}.`
-        : 'Your account is locked. Please contact an administrator.';
+      const message = user.lockedUntil && user.lockedUntil > new Date() ? `Your account is locked. Please try again after ${user.lockedUntil.toLocaleString()}.` : "Your account is locked. Please contact an administrator.";
       return next(new UnauthorizedError(message));
     }
+
     if (!user.isActive) {
-      return next(new UnauthorizedError('Your account is inactive. Please contact an administrator.'));
+      return next(new UnauthorizedError("Your account is inactive. Please contact an administrator."));
     }
+
     await User.findByIdAndUpdate(user._id, { lastLogin: new Date() }, { new: true, runValidators: false });
     req.user = user;
     next();
@@ -43,33 +43,26 @@ const protect = async (req, res, next) => {
 };
 
 /**
- * Permission-based authentication middleware
- * @param {string} permission - Permission string to check (e.g., 'view:patients')
- * @returns {Function} Express middleware
+ * Permission-based middleware
  */
-const auth = (permission) => {
+const auth = permission => {
   return async (req, res, next) => {
-    // First, ensure user is authenticated
-    await protect(req, res, async (err) => {
+    await protect(req, res, async err => {
       if (err) return next(err);
 
-      // If no permission required, just continue
       if (!permission) return next();
 
-      // Example: check if user has the permission (customize as needed)
-      // You might store permissions in req.user.permissions (array of strings)
       if (req.user && Array.isArray(req.user.permissions)) {
         if (req.user.permissions.includes(permission)) {
           return next();
         }
       }
 
-      // Fallback: allow admins, or deny
-      if (req.user && req.user.role === 'admin') {
+      if (req.user && req.user.role === "admin") {
         return next();
       }
 
-      return next(new ForbiddenError('You do not have permission to perform this action'));
+      return next(new ForbiddenError("You do not have permission to perform this action"));
     });
   };
 };
@@ -77,12 +70,10 @@ const auth = (permission) => {
 const restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return next(new Error('restrictTo middleware used without protect middleware'));
+      return next(new Error("restrictTo middleware used without protect middleware"));
     }
     if (!roles.includes(req.user.role)) {
-      return next(
-        new ForbiddenError('You do not have permission to perform this action')
-      );
+      return next(new ForbiddenError("You do not have permission to perform this action"));
     }
     next();
   };
@@ -91,20 +82,11 @@ const restrictTo = (...roles) => {
 const requireHIPAATraining = () => {
   return (req, res, next) => {
     if (!req.user) {
-      return next(new Error('requireHIPAATraining middleware used without protect middleware'));
+      return next(new Error("requireHIPAATraining middleware used without protect middleware"));
     }
-    const needsTraining = [
-      ROLES.ADMIN, 
-      ROLES.DOCTOR, 
-      ROLES.NURSE,
-      ROLES.RECEPTIONIST,
-      ROLES.BILLING,
-      ROLES.LAB_TECHNICIAN
-    ].includes(req.user.role);
+    const needsTraining = [ROLES.ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST, ROLES.BILLING, ROLES.LAB_TECHNICIAN].includes(req.user.role);
     if (needsTraining && !req.user.hipaaTrainingCompleted) {
-      return next(
-        new ForbiddenError('You must complete HIPAA training before accessing this resource')
-      );
+      return next(new ForbiddenError("You must complete HIPAA training before accessing this resource"));
     }
     next();
   };
@@ -118,10 +100,10 @@ const logAccess = () => {
         method: req.method,
         path: req.originalUrl,
         ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
+        userAgent: req.headers["user-agent"],
         timestamp: new Date()
       };
-      logger.info('Access log', accessLog);
+      logger.info("Access log", accessLog);
     }
     next();
   };
@@ -140,12 +122,70 @@ const extractUser = async (req, res, next) => {
         req.user = user;
       }
     } catch (error) {
-      // Ignore token errors, just continue without user
+      // Ignore token errors, continue without user
     }
     next();
   } catch (error) {
     next(error);
   }
+};
+
+/**
+ * Middleware to require a specific role
+ */
+const requireRole = role => {
+  return [protect, restrictTo(role)];
+};
+
+/**
+ * Middleware to require any one of several roles
+ */
+const requireAnyRole = roles => {
+  return [
+    protect,
+    (req, res, next) => {
+      if (!req.user) {
+        return next(new UnauthorizedError("Not authenticated"));
+      }
+      if (!roles.includes(req.user.role)) {
+        return next(new ForbiddenError("You do not have permission to perform this action"));
+      }
+      next();
+    }
+  ];
+};
+
+/**
+ * Middleware to require self (matching user ID) or a specific role
+ */
+const requireSelfOrRole = (role, paramKey = "id") => {
+  return [
+    protect,
+    (req, res, next) => {
+      const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
+      const isAdmin = req.user && req.user.role === role;
+      if (isSelf || isAdmin) {
+        return next();
+      }
+      return next(new ForbiddenError("Access denied"));
+    }
+  ];
+};
+
+/**
+ * Middleware to require self only
+ */
+const requireSelf = (paramKey = "id") => {
+  return [
+    protect,
+    (req, res, next) => {
+      const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
+      if (isSelf) {
+        return next();
+      }
+      return next(new ForbiddenError("Access denied"));
+    }
+  ];
 };
 
 module.exports = {
@@ -154,5 +194,9 @@ module.exports = {
   requireHIPAATraining,
   logAccess,
   extractUser,
-  auth // <-- Export the new auth middleware
+  auth,
+  requireRole,
+  requireAnyRole,
+  requireSelfOrRole,
+  requireSelf
 };
