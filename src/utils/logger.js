@@ -1,110 +1,160 @@
 /**
- * Healthcare Management Application
- * Logger Utility
+ * Logger Utility Module
+ * Provides unified logging interface for the application
+ * Supports log levels, correlation IDs, and sanitized logging
  */
 
-const winston = require('winston');
-const path = require('path');
-const fs = require('fs');
+const logger = require('../config/logger.config');
+const os = require('os');
 
-// Ensure log directory exists
-const logDir = 'logs';
-if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir);
-}
+// Store hostname for log context
+const hostname = os.hostname();
 
-// Define log levels
-const levels = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  http: 3,
-  verbose: 4,
-  debug: 5,
-  silly: 6
+// Track request context using async local storage
+let requestContext = { correlationId: null };
+
+/**
+ * Set correlation ID for request context
+ * @param {string} id - Correlation ID to identify related log entries
+ */
+const setCorrelationId = (id) => {
+  requestContext.correlationId = id;
 };
 
-// Define log level based on environment
-const level = () => {
-  const env = process.env.NODE_ENV || 'development';
-  const isDevelopment = env === 'development';
-  return isDevelopment ? 'debug' : 'info';
+/**
+ * Get current correlation ID
+ * @returns {string|null} Current correlation ID
+ */
+const getCorrelationId = () => {
+  return requestContext.correlationId;
 };
 
-// Define colors for each log level
-const colors = {
-  error: 'red',
-  warn: 'yellow',
-  info: 'green',
-  http: 'magenta',
-  verbose: 'cyan',
-  debug: 'blue',
-  silly: 'grey'
+/**
+ * Format log message with context information
+ * @param {*} message - Log message
+ * @param {Object} [meta={}] - Additional metadata to include
+ * @returns {Object} Formatted message with context
+ */
+const formatMessage = (message, meta = {}) => {
+  return {
+    ...meta,
+    correlationId: requestContext.correlationId,
+    hostname,
+    message
+  };
 };
 
-winston.addColors(colors);
+/**
+ * Log an error message
+ * @param {*} message - Error message or Error object
+ * @param {Object} [meta={}] - Additional metadata
+ */
+const error = (message, meta = {}) => {
+  // If message is an Error object, extract message and stack
+  if (message instanceof Error) {
+    logger.error(formatMessage(message.message, {
+      ...meta,
+      stack: message.stack
+    }));
+  } else {
+    logger.error(formatMessage(message, meta));
+  }
+};
 
-// Custom format for console output
-const consoleFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
-  winston.format.colorize({ all: true }),
-  winston.format.printf(
-    (info) => `${info.timestamp} ${info.level}: ${info.message}`
-  )
-);
+/**
+ * Log a warning message
+ * @param {*} message - Warning message
+ * @param {Object} [meta={}] - Additional metadata
+ */
+const warn = (message, meta = {}) => {
+  logger.warn(formatMessage(message, meta));
+};
 
-// Custom format for file output (no colors)
-const fileFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
-  winston.format.json()
-);
+/**
+ * Log an info message
+ * @param {*} message - Info message
+ * @param {Object} [meta={}] - Additional metadata
+ */
+const info = (message, meta = {}) => {
+  logger.info(formatMessage(message, meta));
+};
 
-// Define transports
-const transports = [
-  new winston.transports.Console({ format: consoleFormat })
-];
+/**
+ * Log a debug message
+ * @param {*} message - Debug message
+ * @param {Object} [meta={}] - Additional metadata
+ */
+const debug = (message, meta = {}) => {
+  logger.debug(formatMessage(message, meta));
+};
 
-// Add file transports if LOG_TO_FILE is true
-if (process.env.LOG_TO_FILE === 'true') {
-  // Error logs
-  transports.push(
-    new winston.transports.File({
-      filename: path.join(logDir, 'error.log'),
-      level: 'error',
-      format: fileFormat
-    })
-  );
-  
-  // All logs
-  transports.push(
-    new winston.transports.File({
-      filename: path.join(logDir, 'combined.log'),
-      format: fileFormat
-    })
-  );
-  
-  // HTTP logs for API requests
-  transports.push(
-    new winston.transports.File({
-      filename: path.join(logDir, 'http.log'),
-      level: 'http',
-      format: fileFormat
-    })
-  );
-}
+/**
+ * Log application startup information
+ */
+const logStartup = () => {
+  info('Application starting', {
+    nodeEnv: process.env.NODE_ENV,
+    nodeVersion: process.version,
+    platform: process.platform,
+    architecture: process.arch,
+    memoryUsage: process.memoryUsage().heapUsed / 1024 / 1024,
+    pid: process.pid
+  });
+};
 
-// Create the logger
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || level(),
-  levels,
-  format: winston.format.combine(
-    winston.format.errors({ stack: true }), // Log the full error stack
-    winston.format.splat(), // Allows string interpolation
-    winston.format.json() // Base format for all transports
-  ),
-  defaultMeta: { service: 'healthcare-api' },
-  transports,
-  exitOnError: false
-});
+/**
+ * Create a middleware that adds correlation ID to request context
+ * @returns {Function} Express middleware
+ */
+const requestLogger = () => {
+  return (req, res, next) => {
+    // Generate correlation ID if not present
+    const correlationId = req.headers['x-correlation-id'] || 
+      req.headers['x-request-id'] || 
+      `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Set correlation ID for this request
+    setCorrelationId(correlationId);
+    
+    // Add correlation ID to response headers
+    res.setHeader('X-Correlation-ID', correlationId);
+    
+    // Add correlation ID to request object for use in routes
+    req.correlationId = correlationId;
+    
+    // Log request information
+    debug(`Incoming request: ${req.method} ${req.originalUrl}`, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      requestId: correlationId
+    });
+    
+    // Log response time when request completes
+    const startTime = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - startTime;
+      
+      const logLevel = res.statusCode >= 500 ? 'error' : 
+                      res.statusCode >= 400 ? 'warn' : 'info';
+      
+      logger[logLevel](formatMessage(`Request completed: ${req.method} ${req.originalUrl}`, {
+        statusCode: res.statusCode,
+        duration: `${duration}ms`,
+        requestId: correlationId
+      }));
+    });
+    
+    next();
+  };
+};
 
-module.exports = logger;
+module.exports = {
+  error,
+  warn,
+  info,
+  debug,
+  setCorrelationId,
+  getCorrelationId,
+  requestLogger,
+  logStartup
+};

@@ -12,6 +12,8 @@ const {
 const securityMiddleware = require('./middleware/security.middleware');
 const morganMiddleware = require('./middleware/morgan.middleware');
 const securityAuditLogger = require('./middleware/audit-logger.middleware');
+const { auditResourceAccess, auditAuthentication } = require('./middleware/audit-logger.middleware');  // Add this line
+
 
 const {
   dynamicRateLimiter,
@@ -82,6 +84,7 @@ app.use(`/api/${config.apiVersion}`, responseWrapper({
 // API routes
 app.use(`/api/${config.apiVersion}`, routes);
 
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -111,6 +114,10 @@ if (config.env !== 'production') {
     });
   });
 }
+
+// Audit logging middleware
+app.use(auditAuthentication());  // Add this line
+app.use(auditResourceAccess());  // Add this line
 
 // 404 handler for unmatched routes
 app.use(notFoundHandler);
