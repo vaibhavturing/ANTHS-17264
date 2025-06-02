@@ -26,7 +26,9 @@ const protect = async (req, res, next) => {
     }
 
     if (user.accountLocked) {
-      const message = user.lockedUntil && user.lockedUntil > new Date() ? `Your account is locked. Please try again after ${user.lockedUntil.toLocaleString()}.` : "Your account is locked. Please contact an administrator.";
+      const message = user.lockedUntil && user.lockedUntil > new Date()
+        ? `Your account is locked. Please try again after ${user.lockedUntil.toLocaleString()}.`
+        : "Your account is locked. Please contact an administrator.";
       return next(new UnauthorizedError(message));
     }
 
@@ -112,9 +114,8 @@ const logAccess = () => {
 const extractUser = async (req, res, next) => {
   try {
     const token = getTokenFromRequest(req);
-    if (!token) {
-      return next();
-    }
+    if (!token) return next();
+
     try {
       const decoded = await verifyToken(token);
       const user = await User.findById(decoded.id);
@@ -124,72 +125,89 @@ const extractUser = async (req, res, next) => {
     } catch (error) {
       // Ignore token errors, continue without user
     }
+
     next();
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Middleware to require a specific role
- */
-const requireRole = role => {
-  return [protect, restrictTo(role)];
-};
+const requireRole = role => [protect, restrictTo(role)];
 
-/**
- * Middleware to require any one of several roles
- */
-const requireAnyRole = roles => {
-  return [
-    protect,
-    (req, res, next) => {
-      if (!req.user) {
-        return next(new UnauthorizedError("Not authenticated"));
-      }
-      if (!roles.includes(req.user.role)) {
-        return next(new ForbiddenError("You do not have permission to perform this action"));
-      }
-      next();
-    }
-  ];
-};
+const requireAnyRole = roles => [
+  protect,
+  (req, res, next) => {
+    if (!req.user) return next(new UnauthorizedError("Not authenticated"));
+    if (!roles.includes(req.user.role)) return next(new ForbiddenError("You do not have permission to perform this action"));
+    next();
+  }
+];
 
-/**
- * Middleware to require self (matching user ID) or a specific role
- */
-const requireSelfOrRole = (role, paramKey = "id") => {
-  return [
-    protect,
-    (req, res, next) => {
-      const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
-      const isAdmin = req.user && req.user.role === role;
-      if (isSelf || isAdmin) {
-        return next();
-      }
-      return next(new ForbiddenError("Access denied"));
-    }
-  ];
-};
+const requireSelfOrRole = (role, paramKey = "id") => [
+  protect,
+  (req, res, next) => {
+    const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
+    const isAdmin = req.user && req.user.role === role;
+    if (isSelf || isAdmin) return next();
+    return next(new ForbiddenError("Access denied"));
+  }
+];
 
-/**
- * Middleware to require self only
- */
-const requireSelf = (paramKey = "id") => {
-  return [
-    protect,
-    (req, res, next) => {
-      const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
-      if (isSelf) {
-        return next();
-      }
-      return next(new ForbiddenError("Access denied"));
+const requireSelf = (paramKey = "id") => [
+  protect,
+  (req, res, next) => {
+    const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
+    if (isSelf) return next();
+    return next(new ForbiddenError("Access denied"));
+  }
+];
+
+const requirePatientSelfOrProvider = (paramKey = "id") => [
+  protect,
+  (req, res, next) => {
+    const isSelf = req.user && req.user._id.toString() === req.params[paramKey];
+    const isProvider = ["doctor", "nurse", "admin"].includes(req.user?.role);
+    if (isSelf || isProvider) return next();
+    return next(new ForbiddenError("Access denied"));
+  }
+];
+
+// ✅ NEW: Middleware to allow only the patient (by param) or admin
+const requirePatientSelf = (paramKey = "id") => [
+  protect,
+  (req, res, next) => {
+    const isSelf = req.user && req.user.role === "patient" && req.user._id.toString() === req.params[paramKey];
+    const isAdmin = req.user && req.user.role === "admin";
+    if (isSelf || isAdmin) return next();
+    return next(new ForbiddenError("Access denied"));
+  }
+];
+
+// ✅ Middleware to allow only creator or admin to modify/view a record
+const requireRecordCreatorOrAdmin = (getRecordById, paramKey = "id") => [
+  protect,
+  async (req, res, next) => {
+    try {
+      const recordId = req.params[paramKey];
+      const record = await getRecordById(recordId);
+
+      if (!record) return next(new BadRequestError("Record not found"));
+
+      const isCreator = record.createdBy?.toString() === req.user._id.toString();
+      const isAdmin = req.user.role === "admin";
+
+      if (isCreator || isAdmin) return next();
+
+      return next(new ForbiddenError("You are not authorized to access this record"));
+    } catch (err) {
+      next(err);
     }
-  ];
-};
+  }
+];
 
 module.exports = {
   protect,
+  authenticate: protect, // <-- Add this line
   restrictTo,
   requireHIPAATraining,
   logAccess,
@@ -198,5 +216,8 @@ module.exports = {
   requireRole,
   requireAnyRole,
   requireSelfOrRole,
-  requireSelf
+  requireSelf,
+  requirePatientSelfOrProvider,
+  requirePatientSelf, // ✅ Exported here
+  requireRecordCreatorOrAdmin
 };

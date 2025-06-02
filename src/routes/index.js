@@ -14,7 +14,7 @@ const userRoutes = require('./users.routes');
 const patientRoutes = require('./patient.routes');
 const doctorRoutes = require('./doctor.routes');
 const appointmentRoutes = require('./appointment.routes');
-const medicalRecordRoutes = require('./medical-record.routes');
+const medicalRecordRoutes = require('./medicalRecord.routes');
 const adminRoutes = require('./admin.routes');
 const healthRoutes = require('./health.routes');
 
@@ -88,8 +88,8 @@ const mountRoutes = () => {
   router.use(
     '/medical-records',
     authMiddleware.authenticate, // Require valid authentication
-    authMiddleware.requireHipaaTraining, // Require HIPAA training
-    auditResourceAccess(),       // Audit all medical record access (HIPAA)
+    authMiddleware.requireHIPAATraining, // Require HIPAA training
+    auditResourceAccess(),               // Audit all medical record access (HIPAA)
     medicalRecordRoutes
   );
   logger.debug('Mounted medical record routes at /api/medical-records with enhanced security');
@@ -108,6 +108,4 @@ const mountRoutes = () => {
 };
 
 // Export the API router
-module.exports = {
-  routes: mountRoutes()
-};
+module.exports = mountRoutes();

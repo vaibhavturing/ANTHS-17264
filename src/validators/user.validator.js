@@ -5,7 +5,16 @@
  * Covers registration, login, profile updates, and password management
  */
 
-const { Joi, requiredEmail, password, phone, objectId, optionalObjectId } = require('./common.validator');
+const { Joi, requiredEmail, password, objectId, optionalObjectId } = require('./common.validator');
+
+// Define phone schema if not already defined
+const phone = Joi.string()
+  .pattern(/^[0-9]{10}$/)
+  .required()
+  .messages({
+    'string.pattern.base': 'Phone number must be 10 digits',
+    'string.empty': 'Phone number is required'
+  });
 
 // User registration validation schema
 const registerSchema = {
@@ -16,7 +25,7 @@ const registerSchema = {
     password: password,
     confirmPassword: Joi.string().valid(Joi.ref('password')).required()
       .messages({ 'any.only': 'Passwords must match' }),
-    phone: phone.required(),
+    phone: phone, // Now phone is defined
     dateOfBirth: Joi.date().less('now').required(),
     role: Joi.string().valid('patient', 'doctor', 'admin', 'receptionist', 'nurse')
       .default('patient'),

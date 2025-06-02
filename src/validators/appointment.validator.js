@@ -7,7 +7,6 @@
 
 const { 
   Joi, 
-  JoiObjectId,
   objectId, 
   pagination
 } = require('./common.validator');
@@ -15,7 +14,6 @@ const {
 // Create appointment validation schema
 const createAppointmentSchema = {
   body: Joi.object({
-    // Required fields
     patient: objectId,
     doctor: objectId,
     appointmentType: Joi.string().valid(
@@ -23,7 +21,6 @@ const createAppointmentSchema = {
       'procedure', 'test', 'vaccination', 'physical-therapy', 'other'
     ).required(),
     
-    // Date and time
     date: Joi.date().greater('now').required()
       .messages({ 'date.greater': 'Appointment date must be in the future' }),
     
@@ -37,7 +34,6 @@ const createAppointmentSchema = {
       .required()
       .messages({ 'string.pattern.base': 'End time must be in 24-hour format (HH:MM)' }),
     
-    // Optional fields
     status: Joi.string().valid(
       'scheduled', 'confirmed', 'checked-in', 'in-progress', 
       'completed', 'cancelled', 'no-show', 'rescheduled'
@@ -46,17 +42,14 @@ const createAppointmentSchema = {
     reason: Joi.string().max(500).required(),
     notes: Joi.string().max(1000).optional(),
     
-    // Location
     location: Joi.object({
       name: Joi.string().required(),
       address: Joi.string().required(),
       roomNumber: Joi.string().optional()
     }).required(),
     
-    // For telemedicine appointments
     isTelehealth: Joi.boolean().default(false),
     
-    // When telemedicine is selected
     telehealthLink: Joi.string().uri()
       .when('isTelehealth', {
         is: true,
@@ -65,13 +58,9 @@ const createAppointmentSchema = {
       })
       .messages({ 'any.required': 'Telehealth link is required for virtual appointments' }),
     
-    // Preappointment requirements (e.g., fasting before blood test)
     preAppointmentInstructions: Joi.string().optional(),
-    
-    // Insurance verification
     isInsuranceVerified: Joi.boolean().default(false),
     
-    // Repeated appointments
     isRecurring: Joi.boolean().default(false),
     recurringPattern: Joi.object({
       frequency: Joi.string().valid('daily', 'weekly', 'monthly').required(),
@@ -96,17 +85,14 @@ const createAppointmentSchema = {
     })
   })
   .custom((value, helpers) => {
-    // Custom validation to ensure endTime is after startTime
     const startMinutes = convertTimeStringToMinutes(value.startTime);
     const endMinutes = convertTimeStringToMinutes(value.endTime);
     
     if (startMinutes >= endMinutes) {
       return helpers.message('End time must be after start time');
     }
-    
-    // Ensure appointment duration is reasonable (e.g., not more than 8 hours)
-    const durationMinutes = endMinutes - startMinutes;
-    if (durationMinutes > 480) {
+
+    if ((endMinutes - startMinutes) > 480) {
       return helpers.message('Appointment duration cannot exceed 8 hours');
     }
     
@@ -114,20 +100,17 @@ const createAppointmentSchema = {
   })
 };
 
-// Update appointment validation schema
 const updateAppointmentSchema = {
   params: Joi.object({
     appointmentId: objectId
   }),
   body: Joi.object({
-    // Optional fields for update
-    doctor: JoiObjectId.objectId().optional(),
+    doctor: objectId,
     appointmentType: Joi.string().valid(
       'consultation', 'check-up', 'follow-up', 'emergency', 
       'procedure', 'test', 'vaccination', 'physical-therapy', 'other'
     ).optional(),
     
-    // Date and time
     date: Joi.date().greater('now').optional()
       .messages({ 'date.greater': 'Appointment date must be in the future' }),
     
@@ -141,7 +124,6 @@ const updateAppointmentSchema = {
       .optional()
       .messages({ 'string.pattern.base': 'End time must be in 24-hour format (HH:MM)' }),
     
-    // Status update
     status: Joi.string().valid(
       'scheduled', 'confirmed', 'checked-in', 'in-progress', 
       'completed', 'cancelled', 'no-show', 'rescheduled'
@@ -155,27 +137,21 @@ const updateAppointmentSchema = {
       otherwise: Joi.optional()
     }),
     
-    // Location
     location: Joi.object({
       name: Joi.string().required(),
       address: Joi.string().required(),
       roomNumber: Joi.string().optional()
     }).optional(),
     
-    // For telemedicine appointments
     isTelehealth: Joi.boolean().optional(),
     telehealthLink: Joi.string().uri().optional(),
     
-    // Preappointment requirements
     preAppointmentInstructions: Joi.string().optional(),
-    
-    // Insurance verification
     isInsuranceVerified: Joi.boolean().optional(),
   })
   .min(1)
   .message('At least one field must be provided for update')
   .custom((value, helpers) => {
-    // If both startTime and endTime are provided, ensure endTime is after startTime
     if (value.startTime && value.endTime) {
       const startMinutes = convertTimeStringToMinutes(value.startTime);
       const endMinutes = convertTimeStringToMinutes(value.endTime);
@@ -183,10 +159,8 @@ const updateAppointmentSchema = {
       if (startMinutes >= endMinutes) {
         return helpers.message('End time must be after start time');
       }
-      
-      // Ensure appointment duration is reasonable (e.g., not more than 8 hours)
-      const durationMinutes = endMinutes - startMinutes;
-      if (durationMinutes > 480) {
+
+      if ((endMinutes - startMinutes) > 480) {
         return helpers.message('Appointment duration cannot exceed 8 hours');
       }
     }
@@ -195,14 +169,12 @@ const updateAppointmentSchema = {
   })
 };
 
-// Get appointment by ID validation
 const getAppointmentByIdSchema = {
   params: Joi.object({
     appointmentId: objectId
   })
 };
 
-// Delete appointment validation
 const deleteAppointmentSchema = {
   params: Joi.object({
     appointmentId: objectId
@@ -212,12 +184,11 @@ const deleteAppointmentSchema = {
   })
 };
 
-// Get appointments with filtering and pagination
 const getAppointmentsSchema = {
   query: Joi.object({
     ...pagination,
-    patient: JoiObjectId.objectId().optional(),
-    doctor: JoiObjectId.objectId().optional(),
+    patient: objectId,
+    doctor: objectId,
     status: Joi.string().valid(
       'scheduled', 'confirmed', 'checked-in', 'in-progress', 
       'completed', 'cancelled', 'no-show', 'rescheduled', 'all'
@@ -231,7 +202,6 @@ const getAppointmentsSchema = {
     location: Joi.string().optional()
   })
   .custom((value, helpers) => {
-    // If endDate is provided, startDate must also be provided
     if (value.endDate && !value.startDate) {
       return helpers.message('Start date is required when end date is provided');
     }
@@ -239,7 +209,6 @@ const getAppointmentsSchema = {
   })
 };
 
-// Check-in appointment validation
 const checkInAppointmentSchema = {
   params: Joi.object({
     appointmentId: objectId
@@ -267,7 +236,24 @@ const checkInAppointmentSchema = {
   })
 };
 
-// Complete appointment validation
+const updateAppointmentStatusSchema = {
+  params: Joi.object({
+    appointmentId: objectId
+  }),
+  body: Joi.object({
+    status: Joi.string().valid(
+      'scheduled', 'confirmed', 'checked-in', 'in-progress',
+      'completed', 'cancelled', 'no-show', 'rescheduled'
+    ).required(),
+    cancellationReason: Joi.string().max(500).when('status', {
+      is: 'cancelled',
+      then: Joi.required(),
+      otherwise: Joi.optional()
+    })
+  })
+};
+
+
 const completeAppointmentSchema = {
   params: Joi.object({
     appointmentId: objectId
@@ -327,7 +313,6 @@ const completeAppointmentSchema = {
   })
 };
 
-// Helper function to convert HH:MM time to minutes since midnight
 function convertTimeStringToMinutes(timeString) {
   const [hours, minutes] = timeString.split(':').map(Number);
   return hours * 60 + minutes;
@@ -340,5 +325,7 @@ module.exports = {
   deleteAppointmentSchema,
   getAppointmentsSchema,
   checkInAppointmentSchema,
-  completeAppointmentSchema
+  completeAppointmentSchema,
+  updateAppointmentStatusSchema 
+
 };

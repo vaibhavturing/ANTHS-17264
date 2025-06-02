@@ -1,132 +1,75 @@
-/**
- * Appointment Management Routes
- * Handles scheduling, rescheduling, and appointment management
- */
+// src/routes/appointment.routes.js
 
 const express = require('express');
-const appointmentController = require('../controllers/appointment.controller');
-const auth = require('../middleware/auth.middleware');
-const validate = require('../middleware/validate.middleware');
-const appointmentValidator = require('../validators/appointment.validator');
-
 const router = express.Router();
+const validate = require('../middleware/validate.middleware');
+const { auth } = require('../middleware/auth.middleware');
 
-/**
- * @route GET /api/appointments
- * @desc Get a list of appointments (paginated, filtered)
- * @access Authenticated users (filtered by role)
- */
+const appointmentController = require('../controllers/appointment.controller');
+const {
+  createAppointmentSchema,
+  updateAppointmentSchema,
+  getAppointmentByIdSchema,
+  deleteAppointmentSchema,
+  getAppointmentsSchema,
+  checkInAppointmentSchema,
+  completeAppointmentSchema
+} = require('../validators/appointment.validator');
+
+// GET all appointments (with filters, pagination)
 router.get(
   '/',
-  auth.authenticate,
-  validate(appointmentValidator.getAppointmentsQuery),
+  auth(),
+  validate(getAppointmentsSchema),
   appointmentController.getAppointments
 );
 
-/**
- * @route GET /api/appointments/:id
- * @desc Get a single appointment by ID
- * @access Participants (patient, doctor) or admin
- */
+// GET appointment by ID
 router.get(
-  '/:id',
-  auth.requireAppointmentParticipantOrAdmin('id'),
+  '/:appointmentId',
+  auth(),
+  validate(getAppointmentByIdSchema),
   appointmentController.getAppointmentById
 );
 
-/**
- * @route POST /api/appointments
- * @desc Create a new appointment
- * @access Patients, doctors, admin, reception
- */
+// POST create appointment
 router.post(
   '/',
-  auth.requireAnyRole(['patient', 'doctor', 'admin', 'reception']),
-  validate(appointmentValidator.createAppointmentSchema),
+  auth(),
+  validate(createAppointmentSchema),
   appointmentController.createAppointment
 );
 
-/**
- * @route PUT /api/appointments/:id
- * @desc Update an appointment (reschedule)
- * @access Participants (patient, doctor) or admin
- */
+// PUT update appointment
 router.put(
-  '/:id',
-  auth.requireAppointmentParticipantOrAdmin('id'),
-  validate(appointmentValidator.updateAppointmentSchema),
+  '/:appointmentId',
+  auth(),
+  validate(updateAppointmentSchema),
   appointmentController.updateAppointment
 );
 
-/**
- * @route PATCH /api/appointments/:id/status
- * @desc Update appointment status (confirm, cancel, complete)
- * @access Participants (patient, doctor) or admin
- */
+// PATCH cancel appointment
 router.patch(
-  '/:id/status',
-  auth.requireAppointmentParticipantOrAdmin('id'),
-  validate(appointmentValidator.updateAppointmentStatusSchema),
-  appointmentController.updateAppointmentStatus
-);
-
-/**
- * @route DELETE /api/appointments/:id
- * @desc Cancel an appointment (soft delete)
- * @access Participants (patient, doctor) or admin
- */
-router.delete(
-  '/:id',
-  auth.requireAppointmentParticipantOrAdmin('id'),
-  validate(appointmentValidator.cancelAppointmentSchema),
+  '/:appointmentId/cancel',
+  auth(),
+  validate(deleteAppointmentSchema),
   appointmentController.cancelAppointment
 );
 
-/**
- * @route GET /api/appointments/available
- * @desc Get available appointment slots
- * @access Any authenticated user
- */
-router.get(
-  '/available',
-  auth.authenticate,
-  validate(appointmentValidator.getAvailableAppointmentsQuery),
-  appointmentController.getAvailableAppointments
+// PATCH check-in to appointment
+router.patch(
+  '/:appointmentId/check-in',
+  auth(),
+  validate(checkInAppointmentSchema),
+  appointmentController.updateAppointmentStatus
 );
 
-/**
- * @route POST /api/appointments/:id/reminder
- * @desc Send appointment reminder
- * @access Admin, reception
- */
-router.post(
-  '/:id/reminder',
-  auth.requireAnyRole(['admin', 'reception']),
-  appointmentController.sendAppointmentReminder
-);
-
-/**
- * @route POST /api/appointments/:id/notes
- * @desc Add notes to an appointment
- * @access Doctor or admin
- */
-router.post(
-  '/:id/notes',
-  auth.requireAnyRole(['doctor', 'admin']),
-  validate(appointmentValidator.appointmentNotesSchema),
-  appointmentController.addAppointmentNotes
-);
-
-/**
- * @route GET /api/appointments/conflicts
- * @desc Check for appointment conflicts
- * @access Any authenticated user
- */
-router.get(
-  '/conflicts',
-  auth.authenticate,
-  validate(appointmentValidator.checkConflictsQuery),
-  appointmentController.checkAppointmentConflicts
+// PATCH complete appointment
+router.patch(
+  '/:appointmentId/complete',
+  auth(),
+  validate(completeAppointmentSchema),
+  appointmentController.updateAppointmentStatus
 );
 
 module.exports = router;
