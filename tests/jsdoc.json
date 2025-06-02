@@ -1,0 +1,57 @@
+
+{
+  "source": {
+    "include": ["src"],
+    "includePattern": ".+\\.js(doc|x)?$",
+    "excludePattern": "(node_modules/|docs|tests)"
+  },
+  "plugins": [
+    "plugins/markdown",
+    "jsdoc-http-plugin"
+  ],
+  "templates": {
+    "cleverLinks": true,
+    "monospaceLinks": false,
+    "default": {
+      "outputSourceFiles": true,
+      "includeDate": true,
+      "useLongnameInNav": false
+    },
+    "better-docs": {
+      "name": "Healthcare Management Application API Documentation",
+      "title": "Healthcare Management API",
+      "description": "HIPAA-compliant API for healthcare management",
+      "footer": "MIT Licensed",
+      "copyright": "Copyright © 2025",
+      "navLinks": [
+        {
+          "label": "GitHub",
+          "href": "https://github.com/yourusername/healthcare-management-application"
+        },
+        {
+          "label": "About",
+          "href": "https://yourorganization.com/about"
+        }
+      ]
+    },
+    "path": "better-docs",
+    "theme": "tui"
+  },
+  "opts": {
+    "destination": "./docs/api",
+    "encoding": "utf8",
+    "private": true,
+    "recurse": true,
+    "template": "node_modules/better-docs",
+    "readme": "./README.md",
+    "tutorials": "./docs/tutorials"
+  },
+  "markdown": {
+    "parser": "gfm",
+    "hardwrap": true,
+    "idInHeadings": true
+  },
+  "tags": {
+    "allowUnknownTags": ["component", "httpMethod", "httpResponse", "httpResponseError", "httpParam", "httpQuery"]
+  }
+}

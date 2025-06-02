@@ -1,0 +1,314 @@
+openapi: 3.0.3
+info:
+  title: Healthcare Management Application API
+  description: |
+    A comprehensive HIPAA-compliant healthcare management API for handling patient data,
+    appointments, medical records, and provider information.
+  version: 1.0.0
+  contact:
+    name: Development Team
+    email: dev@example.com
+    url: https://example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+  - url: https://staging-api.healthcareapp.example.com/api
+    description: Staging server
+  - url: https://api.healthcareapp.example.com/api
+    description: Production server
+
+tags:
+  - name: Auth
+    description: Authentication operations
+  - name: Users
+    description: User management operations
+  - name: Patients
+    description: Patient record management
+  - name: Doctors
+    description: Doctor profile management
+  - name: Appointments
+    description: Appointment scheduling and management
+  - name: Medical Records
+    description: Patient medical records operations
+  - name: Health
+    description: System health monitoring
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      description: Creates a new user account
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - firstName
+                - lastName
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: johndoe@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: SecureP@ssw0rd
+                firstName:
+                  type: string
+                  example: John
+                lastName:
+                  type: string
+                  example: Doe
+                role:
+                  type: string
+                  enum: [patient, doctor, nurse, admin]
+                  default: patient
+                  example: patient
+      responses:
+        '201':
+          description: User successfully created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /auth/login:
+    post:
+      summary: User login
+      description: Authenticates a user and returns a token
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: johndoe@example.com
+                password:
+                  type: string
+                  format: password
+                  example: SecureP@ssw0rd
+      responses:
+        '200':
+          description: Successfully authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  # Abbreviated documentation - would include all endpoints in a real app
+  # More paths would be defined here...
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "60a6c5e978d8e12b4c7e98ab"
+        email:
+          type: string
+          format: email
+          example: johndoe@example.com
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        role:
+          type: string
+          enum: [patient, doctor, nurse, admin]
+          example: patient
+        active:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-01T12:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2025-06-01T12:00:00Z"
+    
+    Patient:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "60a6c5e978d8e12b4c7e98cd"
+        userId:
+          type: string
+          example: "60a6c5e978d8e12b4c7e98ab"
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        dateOfBirth:
+          type: string
+          format: date
+          example: "1985-05-15"
+        gender:
+          type: string
+          enum: [male, female, other, prefer_not_to_say]
+          example: male
+        contactInformation:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+              example: johndoe@example.com
+            phone:
+              type: string
+              example: "555-123-4567"
+            address:
+              type: string
+              example: "123 Main St, Anytown, USA"
+        emergencyContact:
+          type: object
+          properties:
+            name:
+              type: string
+              example: "Jane Doe"
+            relationship:
+              type: string
+              example: "Spouse"
+            phone:
+              type: string
+              example: "555-987-6543"
+        medicalInformation:
+          type: object
+          properties:
+            allergies:
+              type: array
+              items:
+                type: string
+              example: ["Penicillin", "Peanuts"]
+            medications:
+              type: array
+              items:
+                type: string
+              example: ["Lisinopril 10mg", "Metformin 500mg"]
+            bloodType:
+              type: string
+              example: "O+"
+            patientId:
+              type: string
+              example: "P123456"
+        insurance:
+          type: object
+          properties:
+            provider:
+              type: string
+              example: "Blue Cross Blue Shield"
+            policyNumber:
+              type: string
+              example: "BCBS1234567890"
+            groupNumber:
+              type: string
+              example: "G12345"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-01T12:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2025-06-01T12:00:00Z"
+    
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: "Invalid request data"
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: "email"
+                  message:
+                    type: string
+                    example: "must be a valid email address"
+    
+    # More schemas would be defined here...
+
+security:
+  - bearerAuth: []
