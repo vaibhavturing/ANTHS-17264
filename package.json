@@ -51,6 +51,26 @@
     "winston-daily-rotate-file": "^4.7.1",
     "xss-clean": "^0.1.4"
   },
+  "jest": {
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/setup.js"
+    ],
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "/tests/",
+      "/dist/"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/**/*.test.js"
+    ],
+    "verbose": true,
+    "testTimeout": 30000
+  },
   "devDependencies": {
     "cross-env": "^7.0.3",
     "eslint": "^8.41.0",
