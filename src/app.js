@@ -2,6 +2,7 @@ const express = require('express');
 const compression = require('compression');
 const config = require('./config/config');
 
+
 // Import middleware
 const {
   jsonParserMiddleware,
@@ -39,6 +40,8 @@ if (Array.isArray(securityMiddleware)) {
   app.use(securityMiddleware);
 }
 
+
+
 // Parse request bodies
 app.use(jsonParserMiddleware());
 app.use(urlencodedParserMiddleware());
@@ -46,6 +49,8 @@ app.use(fileUpload.any()); // Accept all file uploads
 
 // Apply compression
 app.use(compression());
+
+app.use(express.static('public')); // Serve static files from 'public' directory
 
 // Logging middleware
 app.use(morganMiddleware);
