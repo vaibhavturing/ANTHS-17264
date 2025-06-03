@@ -4,10 +4,10 @@ const express = require('express');
 const router = express.Router();
 
 // Import the auth controller
-// CRITICAL FIX: Using a local/relative path to the controller
 const authController = require('../controllers/auth.controller');
+const authMiddleware = require('../middleware/auth.middleware');
 
-// CRITICAL FIX: Simple validation middleware to avoid dependencies
+// Simple validation middleware
 const validate = (schema) => {
   return (req, res, next) => {
     if (!schema) return next();
@@ -33,7 +33,7 @@ const validate = (schema) => {
   };
 };
 
-// CRITICAL FIX: Simple rate limiter implementation without dependencies
+// Simple rate limiter implementation
 const simpleRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
   const requests = {};
   
@@ -78,14 +78,19 @@ const simpleRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
   };
 };
 
-// Simple rate limiter for auth routes
+// Rate limiters for different endpoints
 const authLimiter = simpleRateLimiter(15 * 60 * 1000, 10); // 10 requests per 15 minutes
+const loginLimiter = simpleRateLimiter(15 * 60 * 1000, 5);  // 5 login attempts per 15 minutes
 
-// CRITICAL FIX: Import schemas from the file we know works
-// For now, use placeholders for validation schemas
-const registerSchema = null; // Replace with actual schema when validated
-const passwordResetRequestSchema = null;
-const passwordResetSchema = null;
+// Import validation schemas
+const { 
+  registerSchema, 
+  loginSchema, 
+  refreshTokenSchema,
+  passwordResetRequestSchema, 
+  passwordResetSchema,
+  logoutSchema
+} = require('../validators/auth.validator');
 
 /**
  * @route POST /api/auth/register
@@ -95,9 +100,58 @@ const passwordResetSchema = null;
 router.post(
   '/register',
   authLimiter,
-  // The validate middleware will be a no-op until we fix the schema
   validate(registerSchema),
   authController.register
+);
+
+/**
+ * ADDED: Login route
+ * @route POST /api/auth/login
+ * @desc Authenticate user and return tokens
+ * @access Public
+ */
+router.post(
+  '/login',
+  loginLimiter,
+  validate(loginSchema),
+  authController.login
+);
+
+/**
+ * ADDED: Token refresh route
+ * @route POST /api/auth/refresh
+ * @desc Refresh access token using refresh token
+ * @access Public
+ */
+router.post(
+  '/refresh',
+  authLimiter,
+  validate(refreshTokenSchema),
+  authController.refreshToken
+);
+
+/**
+ * ADDED: Logout route
+ * @route POST /api/auth/logout
+ * @desc Logout user and invalidate tokens
+ * @access Public
+ */
+router.post(
+  '/logout',
+  validate(logoutSchema),
+  authController.logout
+);
+
+/**
+ * ADDED: Get current user route
+ * @route GET /api/auth/me
+ * @desc Get current authenticated user profile
+ * @access Private
+ */
+router.get(
+  '/me',
+  authMiddleware.authenticate,
+  authController.getCurrentUser
 );
 
 /**

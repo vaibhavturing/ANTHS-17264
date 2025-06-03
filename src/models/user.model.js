@@ -4,9 +4,11 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 
-// CRITICAL FIX: We need to check if baseSchema exists
-// If there's no baseSchema.js file, we'll create a minimal version
-// Also removing the .add() call which might be causing the error
+// ADDED: Constants for account lockout
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes in milliseconds
+
+// Define base schema fields
 const baseSchema = {
   isDeleted: {
     type: Boolean,
@@ -18,7 +20,6 @@ const baseSchema = {
   }
 };
 
-// CRITICAL FIX: Simplified schema definition - removing problematic inheritance
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -65,9 +66,26 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  
+  // ENHANCED: Login tracking and security fields
   lastLogin: {
     type: Date,
   },
+  lastLoginIp: {
+    type: String,
+  },
+  lastLoginUserAgent: {
+    type: String,
+  },
+  previousLogin: {
+    type: Date,
+  },
+  loginHistory: [{
+    timestamp: Date,
+    ipAddress: String,
+    userAgent: String,
+    success: Boolean
+  }],
   failedLoginAttempts: {
     type: Number,
     default: 0,
@@ -77,6 +95,14 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
   accountLockedUntil: {
+    type: Date,
+  },
+  accountLockedReason: {
+    type: String,
+  },
+  
+  // Password reset fields
+  passwordChangedAt: {
     type: Date,
   },
   passwordResetToken: {
@@ -94,6 +120,12 @@ const userSchema = new mongoose.Schema({
   emailVerificationExpires: {
     type: Date,
     select: false,
+  },
+  
+  // ADDED: Token tracking for forced logout
+  tokenVersion: {
+    type: Number,
+    default: 0,
   },
   
   // Base schema fields (added directly instead of using .add())
@@ -170,7 +202,7 @@ const userSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// CRITICAL FIX: Define DatabaseError class inline in case it's not available
+// Define DatabaseError class inline in case it's not available
 class DatabaseError extends Error {
   constructor(message, originalError = null) {
     super(message);
@@ -207,6 +239,10 @@ userSchema.pre('save', async function(next) {
     // Generate a salt and hash the password
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
+    
+    // ADDED: Update password changed timestamp
+    this.passwordChangedAt = Date.now() - 1000; // Subtract 1 second to handle potential timing issues
+    
     next();
   } catch (error) {
     next(new DatabaseError(`Error hashing password: ${error.message}`, error));
@@ -220,6 +256,15 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   } catch (error) {
     throw new DatabaseError(`Error comparing passwords: ${error.message}`, error);
   }
+};
+
+// ADDED: Method to check if password was changed after a timestamp
+userSchema.methods.changedPasswordAfter = function(timestamp) {
+  if (this.passwordChangedAt) {
+    const changedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
+    return timestamp < changedTimestamp;
+  }
+  return false;
 };
 
 // Generate password reset token
@@ -258,6 +303,85 @@ userSchema.methods.generateEmailVerificationToken = function() {
   return verificationToken;
 };
 
+// ADDED: Record login attempt
+userSchema.methods.recordLoginAttempt = function(success, ipAddress, userAgent) {
+  // Keep login history limited to last 10 entries
+  const maxHistoryItems = 10;
+  
+  // Create new login history entry
+  const loginEntry = {
+    timestamp: new Date(),
+    ipAddress,
+    userAgent,
+    success
+  };
+
+  // Update login history
+  if (!this.loginHistory) {
+    this.loginHistory = [];
+  }
+  
+  this.loginHistory.unshift(loginEntry);
+  
+  // Trim history if needed
+  if (this.loginHistory.length > maxHistoryItems) {
+    this.loginHistory = this.loginHistory.slice(0, maxHistoryItems);
+  }
+  
+  if (success) {
+    // Record previous login time before updating current one
+    if (this.lastLogin) {
+      this.previousLogin = this.lastLogin;
+    }
+    
+    // Update successful login info
+    this.lastLogin = new Date();
+    this.lastLoginIp = ipAddress;
+    this.lastLoginUserAgent = userAgent;
+    this.failedLoginAttempts = 0;
+    this.accountLocked = false;
+    this.accountLockedUntil = null;
+    this.accountLockedReason = null;
+  } else {
+    // Increment failed login attempts
+    this.failedLoginAttempts += 1;
+    
+    // Lock account if too many failed attempts
+    if (this.failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+      this.accountLocked = true;
+      this.accountLockedUntil = new Date(Date.now() + LOCKOUT_TIME);
+      this.accountLockedReason = 'Too many failed login attempts';
+    }
+  }
+  
+  return this;
+};
+
+// ADDED: Check if account is locked
+userSchema.methods.isAccountLocked = function() {
+  if (!this.accountLocked) {
+    return false;
+  }
+  
+  // Check if lock has expired
+  if (this.accountLockedUntil && this.accountLockedUntil < new Date()) {
+    // Auto-unlock if lockout period has passed
+    this.accountLocked = false;
+    this.accountLockedUntil = null;
+    this.accountLockedReason = null;
+    this.failedLoginAttempts = 0;
+    return false;
+  }
+  
+  return true;
+};
+
+// ADDED: Increment token version (for token invalidation)
+userSchema.methods.incrementTokenVersion = function() {
+  this.tokenVersion += 1;
+  return this;
+};
+
 // Format user data for client
 userSchema.methods.toClientJSON = function() {
   const userData = {
@@ -270,6 +394,7 @@ userSchema.methods.toClientJSON = function() {
     dateOfBirth: this.dateOfBirth,
     avatarUrl: this.avatarUrl,
     emailVerified: this.emailVerified,
+    lastLogin: this.lastLogin,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt
   };
