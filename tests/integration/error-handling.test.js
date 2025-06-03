@@ -7,6 +7,11 @@ const request = require('supertest');
 const app = require('../../src/app');
 const helpers = require('../test-helpers');
 
+// Mocking User model methods
+const User = require('../../src/models/User');
+User.findById = jest.fn();
+User.findOne = jest.fn();
+
 describe('Error Handling Integration', () => {
   describe('404 Not Found', () => {
     it('should return a structured 404 error for non-existent routes', async () => {

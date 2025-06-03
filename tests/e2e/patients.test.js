@@ -6,9 +6,12 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../../src/app');
-const User = require('../../src/models/user.model');
+const { User } = require('../../../src/models/user.model');
 const Patient = require('../../src/models/patient.model');
 const helpers = require('../test-helpers');
+
+User.findById = jest.fn();
+User.findOne = jest.fn();
 
 describe('Patient API E2E', () => {
   let adminUser;

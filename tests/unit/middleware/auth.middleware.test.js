@@ -5,14 +5,17 @@
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const authMiddleware = require('../../../src/middleware/auth.middleware');
-const User = require('../../../src/models/user.model');
-const { AuthenticationError } = require('../../../src/utils/errors/AuthenticationError');
-const { AuthorizationError } = require('../../../src/utils/errors/AuthorizationError');
+const { User } = require('../../../src/models/user.model');
+const  AuthenticationError  = require('../../../src/utils/errors/AuthenticationError');
+const  AuthorizationError  = require('../../../src/utils/errors/AuthorizationError');
 
 // Mock dependencies
 jest.mock('jsonwebtoken');
 jest.mock('../../../src/models/user.model');
 jest.mock('../../../src/utils/logger');
+
+User.findById = jest.fn();
+User.findOne = jest.fn();
 
 describe('Auth Middleware', () => {
   beforeEach(() => {

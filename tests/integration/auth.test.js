@@ -6,8 +6,12 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../../src/app');
-const User = require('../../src/models/user.model');
+const { User } = require('../../../src/models/user.model');
 const helpers = require('../test-helpers');
+
+// Mock User model methods
+User.findById = jest.fn();
+User.findOne = jest.fn();
 
 describe('Auth API Endpoints', () => {
   let testUserIds = [];
