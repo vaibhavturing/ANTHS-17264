@@ -25,16 +25,13 @@ class DatabaseConnection {
     // Configure mongoose
     mongoose.set('strictQuery', false);
     
-    // Connection options
-    this.connectionOptions = {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      maxPoolSize: config.db.poolSize || 10,
-      socketTimeoutMS: 45000,
-      serverSelectionTimeoutMS: 30000,
-      keepAlive: true,
-      keepAliveInitialDelay: 300000, // 5 minutes
-    };
+this.connectionOptions = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  maxPoolSize: config.db.poolSize || 10,
+  socketTimeoutMS: 45000,
+  serverSelectionTimeoutMS: 30000,
+};
     
     // Setup event listeners
     this._setupEventListeners();
