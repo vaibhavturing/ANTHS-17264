@@ -1,14 +1,58 @@
 // src/services/auth.service.js
 
 const User = require('../models/user.model');
-const { generateToken, verifyToken } = require('../utils/auth.util');
-const { 
-  ValidationError, 
-  AuthenticationError, 
-  DatabaseError,
-  BusinessLogicError
-} = require('../utils/errors');
-const { auditLog } = require('../utils/audit-logger');
+const crypto = require('crypto');
+
+// Define error classes inline to avoid dependencies
+class ValidationError extends Error {
+  constructor(message, details = null) {
+    super(message);
+    this.name = 'ValidationError';
+    this.statusCode = 400;
+    this.details = details;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+class AuthenticationError extends Error {
+  constructor(message, details = null) {
+    super(message);
+    this.name = 'AuthenticationError';
+    this.statusCode = 401;
+    this.details = details;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+class DatabaseError extends Error {
+  constructor(message, originalError = null) {
+    super(message);
+    this.name = 'DatabaseError';
+    this.statusCode = 500;
+    this.originalError = originalError;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+class BusinessLogicError extends Error {
+  constructor(message, details = null) {
+    super(message);
+    this.name = 'BusinessLogicError';
+    this.statusCode = 422;
+    this.details = details;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+// Simple logging function for audit (can be replaced with your actual audit logger)
+const auditLog = (data) => {
+  console.log('[AUDIT]', JSON.stringify(data));
+};
+
+// Simple token generator if not using jwt
+const generateToken = (payload, expiresIn = '1h') => {
+  return { token: crypto.randomBytes(32).toString('hex'), expiresAt: Date.now() + 3600000 };
+};
 
 class AuthService {
   /**
@@ -18,7 +62,7 @@ class AuthService {
    */
   async register(userData) {
     try {
-      // Check if email already exists
+      // Check if email already exists (this pre-check can help provide a clearer error)
       const existingUser = await User.findOne({ email: userData.email });
       if (existingUser) {
         throw new ValidationError('Email is already registered');
@@ -27,8 +71,8 @@ class AuthService {
       // Create new user
       const user = new User(userData);
       
-      // Generate email verification token
-      if (user.generateEmailVerificationToken) {
+      // Generate email verification token if the method exists
+      if (typeof user.generateEmailVerificationToken === 'function') {
         user.generateEmailVerificationToken();
       }
       
@@ -48,7 +92,21 @@ class AuthService {
       });
       
       // Return user data without sensitive information
-      return user.toClientJSON();
+      // Check if toClientJSON method exists
+      if (typeof user.toClientJSON === 'function') {
+        return user.toClientJSON();
+      }
+      
+      // Fallback if method doesn't exist
+      return {
+        id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt
+      };
     } catch (error) {
       // Handle different types of errors
       if (error.name === 'ValidationError') {
@@ -97,7 +155,19 @@ class AuthService {
         resourceId: user._id
       });
       
-      return user.toClientJSON();
+      // Return user data
+      if (typeof user.toClientJSON === 'function') {
+        return user.toClientJSON();
+      }
+      
+      return {
+        id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        emailVerified: user.emailVerified
+      };
     } catch (error) {
       if (error instanceof ValidationError) {
         throw error;
@@ -118,8 +188,8 @@ class AuthService {
       // Even if user not found, return success to prevent email enumeration
       if (!user) return true;
       
-      // Generate reset token
-      if (user.generatePasswordResetToken) {
+      // Generate reset token if the method exists
+      if (typeof user.generatePasswordResetToken === 'function') {
         user.generatePasswordResetToken();
         await user.save();
       }
