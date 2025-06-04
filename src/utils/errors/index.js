@@ -8,6 +8,7 @@ const DatabaseError = require('./DatabaseError');
 const NotFoundError = require('./NotFoundError');
 const BusinessLogicError = require('./BusinessLogicError');
 const ApiError = require('./ApiError');
+const TooManyRequestsError = require('./TooManyRequestsError'); // ADDITION: Import the new error class
 
 module.exports = {
   BaseError,
@@ -17,5 +18,6 @@ module.exports = {
   DatabaseError,
   NotFoundError,
   BusinessLogicError,
-  ApiError
+  ApiError,
+  TooManyRequestsError // ADDITION: Export the new error class
 };
