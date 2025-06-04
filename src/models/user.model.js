@@ -3,22 +3,13 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const baseSchema = require('./baseSchema');
+const { AuthenticationError } = require('../utils/errors');
+const logger = require('../utils/logger');
 
 // ADDED: Constants for account lockout
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes in milliseconds
-
-// Define base schema fields
-const baseSchema = {
-  isDeleted: {
-    type: Boolean,
-    default: false
-  },
-  deletedAt: {
-    type: Date,
-    default: null
-  }
-};
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -31,6 +22,7 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true,
+    minlength: 8,
     select: false, // Don't include password in query results
   },
   firstName: {
@@ -47,6 +39,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     enum: ['patient', 'doctor', 'nurse', 'admin'],
+    default: 'patient'
   },
   phoneNumber: {
     type: String,
@@ -65,6 +58,10 @@ const userSchema = new mongoose.Schema({
   emailVerified: {
     type: Boolean,
     default: false,
+  },
+  isVerified: {
+    type: Boolean,
+    default: false
   },
   
   // ENHANCED: Login tracking and security fields
@@ -100,6 +97,9 @@ const userSchema = new mongoose.Schema({
   accountLockedReason: {
     type: String,
   },
+  lockUntil: {
+    type: Date
+  },
   
   // Password reset fields
   passwordChangedAt: {
@@ -121,6 +121,7 @@ const userSchema = new mongoose.Schema({
     type: Date,
     select: false,
   },
+  passwordLastChanged: Date,
   
   // ADDED: Token tracking for forced logout
   tokenVersion: {
@@ -128,7 +129,7 @@ const userSchema = new mongoose.Schema({
     default: 0,
   },
   
-  // Base schema fields (added directly instead of using .add())
+  // Base schema fields
   isDeleted: {
     type: Boolean,
     default: false
@@ -139,7 +140,6 @@ const userSchema = new mongoose.Schema({
   },
   
   // Role-specific fields
-  // Patient fields
   insuranceProvider: {
     type: String,
     required: function() { return this.role === 'patient'; }
@@ -162,8 +162,6 @@ const userSchema = new mongoose.Schema({
       required: function() { return this.role === 'patient'; }
     }
   },
-  
-  // Doctor fields
   licenseNumber: {
     type: String,
     required: function() { return this.role === 'doctor'; }
@@ -176,20 +174,14 @@ const userSchema = new mongoose.Schema({
     type: Number,
     required: function() { return this.role === 'doctor'; }
   },
-  
-  // Nurse fields
   nursingLicense: {
     type: String,
     required: function() { return this.role === 'nurse'; }
   },
-  
-  // Shared healthcare professional fields
   department: {
     type: String,
     required: function() { return ['nurse', 'doctor'].includes(this.role); }
   },
-  
-  // Admin fields
   adminType: {
     type: String,
     enum: ['system', 'billing', 'front-desk', 'medical-records'],
@@ -200,7 +192,7 @@ const userSchema = new mongoose.Schema({
     enum: ['level1', 'level2', 'level3'],
     required: function() { return this.role === 'admin'; }
   }
-}, { timestamps: true });
+}, baseSchema.baseOptions);
 
 // Define DatabaseError class inline in case it's not available
 class DatabaseError extends Error {
@@ -232,20 +224,21 @@ userSchema.pre('save', async function(next) {
 
 // Password hashing middleware
 userSchema.pre('save', async function(next) {
-  // Only hash the password if it has been modified (or is new)
   if (!this.isModified('password')) return next();
 
   try {
-    // Generate a salt and hash the password
-    const salt = await bcrypt.genSalt(10);
+    const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
-    
-    // ADDED: Update password changed timestamp
-    this.passwordChangedAt = Date.now() - 1000; // Subtract 1 second to handle potential timing issues
-    
+
+    if (this.isModified('password')) {
+      this.passwordChangedAt = Date.now() - 1000;
+      this.passwordLastChanged = Date.now();
+    }
+
     next();
   } catch (error) {
-    next(new DatabaseError(`Error hashing password: ${error.message}`, error));
+    logger.error('Password hashing failed', { error: error.message });
+    next(new Error('Password processing failed'));
   }
 });
 
@@ -254,7 +247,8 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   try {
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
-    throw new DatabaseError(`Error comparing passwords: ${error.message}`, error);
+    logger.error('Password comparison failed', { error: error.message });
+    throw new AuthenticationError('Password verification failed');
   }
 };
 
@@ -269,46 +263,31 @@ userSchema.methods.changedPasswordAfter = function(timestamp) {
 
 // Generate password reset token
 userSchema.methods.generatePasswordResetToken = function() {
-  // Generate a random token
   const resetToken = crypto.randomBytes(32).toString('hex');
-  
-  // Hash token and save to database
-  this.passwordResetToken = crypto
-    .createHash('sha256')
-    .update(resetToken)
-    .digest('hex');
-    
-  // Set token expiration (1 hour from now)
+  this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
   this.passwordResetExpires = Date.now() + 3600000; // 1 hour
-  
-  // Return unhashed token (will be sent in email)
+  return resetToken;
+};
+
+// Create password reset token (alternate method name from other file)
+userSchema.methods.createPasswordResetToken = function() {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.passwordResetExpires = Date.now() + 60 * 60 * 1000;
   return resetToken;
 };
 
 // Generate email verification token
 userSchema.methods.generateEmailVerificationToken = function() {
-  // Generate a random token
   const verificationToken = crypto.randomBytes(32).toString('hex');
-  
-  // Hash token and save to database
-  this.emailVerificationToken = crypto
-    .createHash('sha256')
-    .update(verificationToken)
-    .digest('hex');
-    
-  // Set token expiration (24 hours from now)
+  this.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
   this.emailVerificationExpires = Date.now() + 86400000; // 24 hours
-  
-  // Return unhashed token (will be sent in email)
   return verificationToken;
 };
 
-// ADDED: Record login attempt
+// Record login attempt
 userSchema.methods.recordLoginAttempt = function(success, ipAddress, userAgent) {
-  // Keep login history limited to last 10 entries
   const maxHistoryItems = 10;
-  
-  // Create new login history entry
   const loginEntry = {
     timestamp: new Date(),
     ipAddress,
@@ -316,25 +295,19 @@ userSchema.methods.recordLoginAttempt = function(success, ipAddress, userAgent) 
     success
   };
 
-  // Update login history
   if (!this.loginHistory) {
     this.loginHistory = [];
   }
-  
+
   this.loginHistory.unshift(loginEntry);
-  
-  // Trim history if needed
   if (this.loginHistory.length > maxHistoryItems) {
     this.loginHistory = this.loginHistory.slice(0, maxHistoryItems);
   }
-  
+
   if (success) {
-    // Record previous login time before updating current one
     if (this.lastLogin) {
       this.previousLogin = this.lastLogin;
     }
-    
-    // Update successful login info
     this.lastLogin = new Date();
     this.lastLoginIp = ipAddress;
     this.lastLoginUserAgent = userAgent;
@@ -343,40 +316,33 @@ userSchema.methods.recordLoginAttempt = function(success, ipAddress, userAgent) 
     this.accountLockedUntil = null;
     this.accountLockedReason = null;
   } else {
-    // Increment failed login attempts
     this.failedLoginAttempts += 1;
-    
-    // Lock account if too many failed attempts
     if (this.failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
       this.accountLocked = true;
       this.accountLockedUntil = new Date(Date.now() + LOCKOUT_TIME);
       this.accountLockedReason = 'Too many failed login attempts';
     }
   }
-  
+
   return this;
 };
 
-// ADDED: Check if account is locked
+// Check if account is locked
 userSchema.methods.isAccountLocked = function() {
-  if (!this.accountLocked) {
-    return false;
-  }
-  
-  // Check if lock has expired
+  if (!this.accountLocked) return false;
+
   if (this.accountLockedUntil && this.accountLockedUntil < new Date()) {
-    // Auto-unlock if lockout period has passed
     this.accountLocked = false;
     this.accountLockedUntil = null;
     this.accountLockedReason = null;
     this.failedLoginAttempts = 0;
     return false;
   }
-  
+
   return true;
 };
 
-// ADDED: Increment token version (for token invalidation)
+// Increment token version
 userSchema.methods.incrementTokenVersion = function() {
   this.tokenVersion += 1;
   return this;
@@ -399,12 +365,10 @@ userSchema.methods.toClientJSON = function() {
     updatedAt: this.updatedAt
   };
 
-  // Add role-specific fields to the response
   switch (this.role) {
     case 'patient':
       userData.insuranceProvider = this.insuranceProvider;
       userData.insuranceId = this.insuranceId;
-      // Don't include full emergency contact details in client response for privacy
       userData.hasEmergencyContact = !!this.emergencyContact;
       break;
     case 'doctor':
@@ -419,7 +383,6 @@ userSchema.methods.toClientJSON = function() {
       break;
     case 'admin':
       userData.adminType = this.adminType;
-      // Don't include security clearance in client response for security
       break;
     default:
       break;
