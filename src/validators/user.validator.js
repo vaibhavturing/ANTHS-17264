@@ -1,203 +1,162 @@
 // src/validators/user.validator.js
+const Joi = require('joi');
 
 /**
- * Validation schemas for user-related requests
- * Covers registration, login, profile updates, and password management
+ * Validation schemas for user management
+ * 
+ * CHANGES:
+ * - Defined common validators directly in this file instead of importing
+ * - Added missing validators for various user fields
+ * - Fixed reference to commonValidators
+ * - Added proper validation messages
  */
 
-const { Joi, requiredEmail, password, objectId, optionalObjectId } = require('./common.validator');
-
-// Define phone schema if not already defined
-const phone = Joi.string()
-  .pattern(/^[0-9]{10}$/)
-  .required()
-  .messages({
-    'string.pattern.base': 'Phone number must be 10 digits',
-    'string.empty': 'Phone number is required'
-  });
-
-// User registration validation schema
-const registerSchema = {
-  body: Joi.object({
-    firstName: Joi.string().min(2).max(50).required(),
-    lastName: Joi.string().min(2).max(50).required(),
-    email: requiredEmail,
-    password: password,
-    confirmPassword: Joi.string().valid(Joi.ref('password')).required()
-      .messages({ 'any.only': 'Passwords must match' }),
-    phone: phone, // Now phone is defined
-    dateOfBirth: Joi.date().less('now').required(),
-    role: Joi.string().valid('patient', 'doctor', 'admin', 'receptionist', 'nurse')
-      .default('patient'),
+// Define common validators directly in this file
+const commonValidators = {
+  // Email validator
+  email: Joi.string()
+    .email()
+    .lowercase()
+    .trim()
+    .max(255)
+    .messages({
+      'string.email': 'Please provide a valid email address',
+      'string.empty': 'Email address cannot be empty',
+      'string.max': 'Email address cannot exceed {#limit} characters'
+    }),
     
-    // HIPAA training date - required for healthcare professionals
-    hipaaTrainingDate: Joi.date().less('now')
-      .when('role', {
-        is: Joi.string().valid('doctor', 'admin', 'receptionist', 'nurse'),
+  // Password validator
+  password: Joi.string()
+    .min(8)
+    .max(72) // bcrypt max length
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .messages({
+      'string.empty': 'Password cannot be empty',
+      'string.min': 'Password must be at least {#limit} characters long',
+      'string.max': 'Password cannot exceed {#limit} characters',
+      'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
+    }),
+    
+  // Name validator
+  name: Joi.string()
+    .trim()
+    .min(2)
+    .max(100)
+    .pattern(/^[A-Za-z\s\-']+$/)
+    .messages({
+      'string.empty': 'Name cannot be empty',
+      'string.min': 'Name must be at least {#limit} characters long',
+      'string.max': 'Name cannot exceed {#limit} characters',
+      'string.pattern.base': 'Name can only contain letters, spaces, hyphens, and apostrophes'
+    }),
+  
+  // ID validator (MongoDB ObjectId)
+  id: Joi.string()
+    .hex()
+    .length(24)
+    .messages({
+      'string.empty': 'ID cannot be empty',
+      'string.length': 'ID must be 24 hexadecimal characters',
+      'string.hex': 'ID must contain only hexadecimal characters'
+    })
+};
+
+/**
+ * Validation schemas for user management
+ */
+const userValidator = {
+  /**
+   * Validation schema for creating users
+   */
+  createUserSchema: Joi.object({
+    email: commonValidators.email.required(),
+    password: commonValidators.password.required(),
+    firstName: commonValidators.name.required(),
+    lastName: commonValidators.name.required(),
+    role: Joi.string().valid('admin', 'doctor', 'nurse', 'patient').optional(),
+    roles: Joi.array().items(commonValidators.id).min(1).optional(),
+    isActive: Joi.boolean().optional().default(true),
+    isVerified: Joi.boolean().optional().default(false),
+    phoneNumber: Joi.string().optional(),
+    address: Joi.object({
+      street: Joi.string().optional(),
+      city: Joi.string().optional(),
+      state: Joi.string().optional(),
+      postalCode: Joi.string().optional(),
+      country: Joi.string().optional(),
+    }).optional()
+  }).custom((value, helpers) => {
+    // Either role or roles should be provided
+    if (!value.role && (!value.roles || value.roles.length === 0)) {
+      return helpers.error('object.missing', {
+        peers: ['role', 'roles'],
+        message: 'Either role or roles must be provided'
+      });
+    }
+    return value;
+  }),
+
+  /**
+   * Validation schema for updating users
+   */
+  updateUserSchema: Joi.object({
+    email: commonValidators.email.optional(),
+    password: commonValidators.password.optional(),
+    firstName: commonValidators.name.optional(),
+    lastName: commonValidators.name.optional(),
+    role: Joi.string().valid('admin', 'doctor', 'nurse', 'patient').optional(),
+    roles: Joi.array().items(commonValidators.id).min(1).optional(),
+    isActive: Joi.boolean().optional(),
+    isVerified: Joi.boolean().optional(), 
+    phoneNumber: Joi.string().optional(),
+    address: Joi.object({
+      street: Joi.string().optional(),
+      city: Joi.string().optional(),
+      state: Joi.string().optional(),
+      postalCode: Joi.string().optional(),
+      country: Joi.string().optional(),
+    }).optional()
+  }).min(1),
+
+  /**
+   * Validation schema for role assignment
+   */
+  updateRolesSchema: Joi.object({
+    roles: Joi.array().items(commonValidators.id).min(1).required()
+  }),
+
+  /**
+   * Validation schema for bulk operations
+   */
+  bulkOperationSchema: Joi.object({
+    operation: Joi.string().valid('activate', 'deactivate', 'delete', 'assignRole').required(),
+    userIds: Joi.array().items(commonValidators.id).min(1).required(),
+    options: Joi.object({
+      roleId: Joi.string().hex().length(24).when('..operation', {
+        is: 'assignRole',
         then: Joi.required(),
-        otherwise: Joi.optional()
+        otherwise: Joi.forbidden()
       })
-      .messages({
-        'any.required': 'HIPAA training date is required for healthcare staff'
-      }),
-      
-    // Additional fields for specific roles
-    specialty: Joi.string()
-      .when('role', {
-        is: 'doctor',
-        then: Joi.string().required(),
-        otherwise: Joi.optional()
-      }),
-      
-    licenseNumber: Joi.string()
-      .when('role', {
-        is: 'doctor',
-        then: Joi.string().required(),
-        otherwise: Joi.optional()
-      }),
-    
-    // Contact and address information  
-    address: Joi.object({
-      street: Joi.string().required(),
-      city: Joi.string().required(),
-      state: Joi.string().length(2).required(),
-      zipCode: Joi.string().pattern(/^\d{5}(-\d{4})?$/).required(),
-      country: Joi.string().default('USA')
-    })
-  })
-};
-
-// User login validation schema
-const loginSchema = {
-  body: Joi.object({
-    email: requiredEmail,
-    password: Joi.string().required(),
-    rememberMe: Joi.boolean().default(false)
-  })
-};
-
-// Password reset request validation
-const forgotPasswordSchema = {
-  body: Joi.object({
-    email: requiredEmail
-  })
-};
-
-// Password reset validation
-const resetPasswordSchema = {
-  body: Joi.object({
-    token: Joi.string().required(),
-    password: password,
-    confirmPassword: Joi.string().valid(Joi.ref('password')).required()
-      .messages({ 'any.only': 'Passwords must match' })
-  })
-};
-
-// Change password validation
-const changePasswordSchema = {
-  body: Joi.object({
-    currentPassword: Joi.string().required(),
-    newPassword: password,
-    confirmPassword: Joi.string().valid(Joi.ref('newPassword')).required()
-      .messages({ 'any.only': 'Passwords must match' })
-  })
-};
-
-// Email verification validation
-const verifyEmailSchema = {
-  query: Joi.object({
-    token: Joi.string().required()
-  })
-};
-
-// Update user profile validation
-const updateProfileSchema = {
-  params: Joi.object({
-    userId: objectId
+    }).optional()
   }),
-  body: Joi.object({
-    firstName: Joi.string().min(2).max(50).optional(),
-    lastName: Joi.string().min(2).max(50).optional(),
-    phone: phone.optional(),
-    email: Joi.string().email().optional(),
-    profileImage: Joi.string().uri().optional(),
-    
-    // Healthcare-specific fields
-    hipaaTrainingDate: Joi.date().less('now').optional(),
-    specialty: Joi.string().optional(),
-    licenseNumber: Joi.string().optional(),
-    department: Joi.string().optional(),
-    position: Joi.string().optional(),
-    
-    // Contact and address information
-    address: Joi.object({
-      street: Joi.string().required(),
-      city: Joi.string().required(),
-      state: Joi.string().length(2).required(),
-      zipCode: Joi.string().pattern(/^\d{5}(-\d{4})?$/).required(),
-      country: Joi.string().default('USA')
-    }).optional(),
-    
-    // Notification preferences
-    notificationPreferences: Joi.object({
-      email: Joi.boolean().default(true),
-      sms: Joi.boolean().default(true),
-      push: Joi.boolean().default(true)
-    }).optional(),
-    
-    // User cannot change their role through this endpoint
-    role: Joi.forbidden().messages({
-      'any.unknown': 'Role cannot be changed through this endpoint'
-    })
-  }).min(1).message('At least one field must be provided for update')
-};
 
-// Get user by ID validation
-const getUserByIdSchema = {
-  params: Joi.object({
-    userId: objectId
-  })
-};
-
-// Get all users with filtering validation
-const getUsersSchema = {
-  query: Joi.object({
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(100).default(10),
-    role: Joi.string().valid('patient', 'doctor', 'admin', 'receptionist', 'nurse').optional(),
+  /**
+   * Validation schema for advanced user search
+   */
+  searchUsersSchema: Joi.object({
     search: Joi.string().optional(),
-    sortBy: Joi.string().optional(),
-    sortDirection: Joi.string().valid('asc', 'desc').optional(),
-    specialty: Joi.string().optional(),
-    department: Joi.string().optional(),
-    status: Joi.string().valid('active', 'inactive', 'pending', 'blocked').optional()
+    roles: Joi.alternatives().try(
+      commonValidators.id,
+      Joi.array().items(commonValidators.id)
+    ).optional(),
+    isActive: Joi.boolean().optional(),
+    isVerified: Joi.boolean().optional(),
+    createdAfter: Joi.date().iso().optional(),
+    createdBefore: Joi.date().iso().optional(),
+    sort: Joi.string().optional(),
+    order: Joi.string().valid('asc', 'desc').optional(),
+    limit: Joi.number().integer().min(1).max(1000).optional()
   })
 };
 
-// User account activation/deactivation validation
-const updateUserStatusSchema = {
-  params: Joi.object({
-    userId: objectId
-  }),
-  body: Joi.object({
-    status: Joi.string().valid('active', 'inactive', 'blocked').required(),
-    reason: Joi.string().when('status', {
-      is: 'blocked',
-      then: Joi.string().required(),
-      otherwise: Joi.optional()
-    })
-  })
-};
-
-module.exports = {
-  registerSchema,
-  loginSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
-  changePasswordSchema,
-  verifyEmailSchema,
-  updateProfileSchema,
-  getUserByIdSchema,
-  getUsersSchema,
-  updateUserStatusSchema
-};
+module.exports = userValidator;

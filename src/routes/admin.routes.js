@@ -12,6 +12,9 @@ const validate = require('../middleware/validate.middleware');
 const { adminIpWhitelist } = require('../middleware/ip-whitelist.middleware');
 const { adminLimiter } = require('../middleware/rate-limit.middleware');
 const asyncHandler = require('../utils/async-handler.util');
+const auditLogMiddleware = require('../middleware/audit-logger.middleware');
+const rateLimitMiddleware = require('../middleware/rate-limit.middleware');
+const userValidator = require('../validators/user.validator');
 
 // Apply admin-specific security to all routes
 router.use(auth('admin'));  // Role-based authorization

@@ -8,8 +8,12 @@ const userController = require('../controllers/user.controller');
 const auth = require('../middleware/auth.middleware');
 const validate = require('../middleware/validate.middleware');
 const userValidator = require('../validators/user.validator');
+const auditLogMiddleware = require('../middleware/audit-logger.middleware');
+
 
 const router = express.Router();
+
+
 
 /**
  * @route GET /api/users
