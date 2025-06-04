@@ -1,26 +1,24 @@
+// src/models/index.js
+const User = require('./user.model');
+const Patient = require('./patient.model');
+const Doctor = require('./doctor.model');
+const Appointment = require('./appointment.model');
+const MedicalRecord = require('./medicalRecord.model');
+const Permission = require('./permission.model');
+const Role = require('./role.model');
+const VerificationToken = require('./verification-token.model');
+
 /**
- * Healthcare Management Application
- * Model Index File
- * 
- * Exports all models for easy importing throughout the application
+ * CHANGES:
+ * - Added VerificationToken to the exports
  */
-
-const { User, ROLES } = require('./user.model');
-const { Patient, BLOOD_TYPES } = require('./patient.model');
-const { Doctor, SPECIALTIES } = require('./doctor.model');
-const { Appointment, APPOINTMENT_STATUS, APPOINTMENT_TYPES } = require('./appointment.model');
-const { MedicalRecord, RECORD_TYPES } = require('./medicalRecord.model');
-
 module.exports = {
-  User, 
-  ROLES,
+  User,
   Patient,
-  BLOOD_TYPES,
   Doctor,
-  SPECIALTIES,
   Appointment,
-  APPOINTMENT_STATUS,
-  APPOINTMENT_TYPES,
   MedicalRecord,
-  RECORD_TYPES
+  Permission,
+  Role,
+  VerificationToken
 };
