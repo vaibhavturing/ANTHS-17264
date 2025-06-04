@@ -17,6 +17,8 @@ const { ApiError } = require('../utils/errors');
 // const { dynamicRateLimiter } = require('./middleware/rate-limit.middleware');
 // const securityAuditLogger = require('./middleware/audit-logger.middleware'); // ✅ Ensure this is correctly imported too
 const logger = require('../utils/logger');
+const { TooManyRequestsError } = require('../utils/errors');
+
 
 // Initialize Redis client if configured
 let redisClient;

@@ -1,11 +1,10 @@
 // src/services/email.service.js
 
-const config = require('../config/config');
-const logger = require('../utils/logger');
-const { BusinessLogicError } = require('../utils/errors');
+const config = require("../config/config");
+const logger = require("../utils/logger");
 
 /**
- * Email service for sending transactional emails 
+ * Email service for sending transactional emails
  * in the Healthcare Management Application
  */
 const emailService = {
@@ -23,33 +22,36 @@ const emailService = {
       logger.info(`MOCK EMAIL: Password Reset Requested for ${to}`);
       logger.info(`MOCK EMAIL: Reset link: ${resetLink}`);
 
-      if (config.NODE_ENV === 'production') {
+      if (config.NODE_ENV === "production") {
         // Example integration with an email provider (pseudocode)
-        // const emailProvider = require('../config/emailProvider');
-        // return await emailProvider.send({
-        //   to,
-        //   from: config.EMAIL_FROM,
-        //   subject: 'Password Reset Request - Healthcare App',
-        //   text: `You requested a password reset. Click this link to reset your password: ${resetLink}. This link expires in 60 minutes.`,
-        //   html: `
-        //     <p>You requested a password reset.</p>
-        //     <p>Click <a href="${resetLink}">this link</a> to reset your password.</p>
-        //     <p>This link expires in 60 minutes.</p>
-        //   `
-        // });
+        /*
+        const emailProvider = require('../config/emailProvider');
+        return await emailProvider.send({
+          to,
+          from: config.EMAIL_FROM,
+          subject: 'Password Reset Request - Healthcare App',
+          text: `You requested a password reset. Click this link to reset your password: ${resetLink}. This link expires in 60 minutes.`,
+          html: `
+            <p>You requested a password reset.</p>
+            <p>Click <a href="${resetLink}">this link</a> to reset your password.</p>
+            <p>This link expires in 60 minutes.</p>
+          `
+        });
+        */
+        logger.info(`Production email service would be used for: ${to}`);
       }
 
       // Return success for development/testing
       return {
         success: true,
-        message: `Password reset email sent successfully to ${to}`,
+        message: `Password reset email sent successfully to ${to}`
       };
     } catch (error) {
-      logger.error('Failed to send password reset email', {
+      logger.error("Failed to send password reset email", {
         error: error.message,
         email: to
       });
-      throw new BusinessLogicError('Failed to send password reset email');
+      throw new Error("Failed to send password reset email");
     }
   }
 };
