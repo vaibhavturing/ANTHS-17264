@@ -7,6 +7,10 @@ const MedicalRecord = require('./medicalRecord.model');
 const Permission = require('./permission.model');
 const Role = require('./role.model');
 const VerificationToken = require('./verification-token.model');
+const Patient = require('./patient.model');
+const  RefreshToken = require('./refresh-token.model');
+const Session = require('./session.model');
+const TokenBlacklist = require('./token-blacklist.model');
 
 /**
  * CHANGES:
@@ -17,8 +21,11 @@ module.exports = {
   Patient,
   Doctor,
   Appointment,
+  TokenBlacklist,
   MedicalRecord,
   Permission,
+  Session,
+  RefreshToken,
   Role,
   VerificationToken
 };

@@ -1,6 +1,7 @@
 const express = require('express');
 const compression = require('compression');
 const config = require('./config/config');
+const sessionService= require('./services/session.service');
 
 
 // Import middleware

@@ -1,19 +1,9 @@
-// src/models/user.model.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const baseSchema = require('./baseSchema');
 const logger = require('../utils/logger');
 
-/**
- * User schema definition
- * 
- * CHANGES:
- * - Enhanced isVerified field with default false
- * - Added verificationAttempts field to track failed verification attempts
- * - Added verifiedAt timestamp to record when verification occurred
- * - Added lastVerificationEmailSent timestamp to manage rate limiting
- */
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -57,18 +47,6 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  verifiedAt: {
-    type: Date,
-    default: null
-  },
-  verificationAttempts: {
-    type: Number,
-    default: 0
-  },
-  lastVerificationEmailSent: {
-    type: Date,
-    default: null
-  },
   failedLoginAttempts: {
     type: Number,
     default: 0
@@ -84,7 +62,20 @@ const userSchema = new mongoose.Schema({
   // Fields for password reset functionality
   passwordResetToken: String,
   passwordResetExpires: Date,
-  passwordLastChanged: Date
+  passwordLastChanged: Date,
+  
+  // NEW: Session management settings
+  maxConcurrentSessions: {
+    type: Number,
+    default: 5, // Default max 5 concurrent sessions
+    min: 1,
+    max: 10
+  },
+  sessionStrategy: {
+    type: String,
+    enum: ['oldest', 'least-active', 'notify', 'block'],
+    default: 'oldest' // Strategy to use when session limit is reached
+  }
   
 }, baseSchema.baseOptions);
 
@@ -101,12 +92,6 @@ userSchema.pre('save', async function(next) {
     if (this.isModified('password')) {
       this.passwordLastChanged = Date.now();
     }
-
-    // Set verifiedAt timestamp if isVerified is changing to true
-    if (this.isModified('isVerified') && this.isVerified === true && !this.verifiedAt) {
-      this.verifiedAt = Date.now();
-    }
-    
     next();
   } catch (error) {
     logger.error('Password hashing failed', { error: error.message });

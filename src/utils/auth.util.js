@@ -1,140 +1,119 @@
-/**
- * Healthcare Management Application
- * Authentication Utilities
- * 
- * Provides token generation, verification and other authentication utilities
- */
-
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { promisify } = require('util');
 const config = require('../config/config');
-const { UnauthorizedError } = require('./api-error.util');
 const logger = require('./logger');
+const { v4: uuidv4 } = require('uuid');
 
 /**
- * Generate JWT token
- * @param {Object} payload - Data to include in the token
- * @param {String} expiresIn - Token expiration time (e.g. '1h', '7d')
- * @returns {String} JWT token
+ * Utility for token generation and verification
  */
-const generateToken = (payload, expiresIn = config.jwt.expiresIn) => {
-  return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: expiresIn
-  });
-};
+const authUtil = {
+  /**
+   * Generate JWT access token
+   * @param {Object} payload - Token payload
+   * @param {string} tokenId - Optional token ID, will generate if not provided
+   * @returns {string} JWT token
+   */
+  generateAccessToken: (payload, tokenId = null) => {
+    try {
+      // Generate a token ID if not provided
+      const jti = tokenId || uuidv4();
+      
+      return jwt.sign(
+        {...payload, jti},
+        config.JWT_SECRET,
+        {
+          expiresIn: config.JWT_ACCESS_EXPIRATION
+        }
+      );
+    } catch (error) {
+      logger.error('Access token generation failed', { error: error.message });
+      throw new Error('Failed to generate access token');
+    }
+  },
 
-/**
- * Verify JWT token
- * @param {String} token - JWT token to verify
- * @returns {Object} Decoded token payload
- * @throws {Error} If token is invalid or expired
- */
-const verifyToken = async (token) => {
-  try {
-    // Convert callback-based jwt.verify to Promise-based
-    const decoded = await promisify(jwt.verify)(token, config.jwt.secret);
-    return decoded;
-  } catch (error) {
-    logger.error(`Token verification failed: ${error.message}`);
-    
-    if (error.name === 'TokenExpiredError') {
-      throw new UnauthorizedError('Your token has expired. Please log in again.');
+  /**
+   * Generate JWT refresh token
+   * @param {Object} payload - Token payload
+   * @returns {string} JWT refresh token
+   */
+  generateRefreshToken: (payload) => {
+    try {
+      // Always generate a new token ID for refresh tokens
+      const jti = uuidv4();
+      
+      return jwt.sign(
+        {...payload, jti},
+        config.JWT_REFRESH_SECRET,
+        {
+          expiresIn: config.JWT_REFRESH_EXPIRATION
+        }
+      );
+    } catch (error) {
+      logger.error('Refresh token generation failed', { error: error.message });
+      throw new Error('Failed to generate refresh token');
+    }
+  },
+
+  /**
+   * Verify JWT access token
+   * @param {string} token - JWT token to verify
+   * @returns {Object} Decoded payload or null if invalid
+   */
+  verifyAccessToken: (token) => {
+    try {
+      return jwt.verify(token, config.JWT_SECRET);
+    } catch (error) {
+      logger.warn('Access token verification failed', { error: error.message });
+      return null;
+    }
+  },
+
+  /**
+   * Verify JWT refresh token
+   * @param {string} token - JWT refresh token to verify
+   * @returns {Object} Decoded payload or null if invalid
+   */
+  verifyRefreshToken: (token) => {
+    try {
+      return jwt.verify(token, config.JWT_REFRESH_SECRET);
+    } catch (error) {
+      logger.warn('Refresh token verification failed', { error: error.message });
+      return null;
+    }
+  },
+
+  /**
+   * Hash a string (e.g., for storing refresh tokens)
+   * @param {string} data - Data to hash
+   * @returns {string} Hashed string
+   */
+  hashData: (data) => {
+    return crypto
+      .createHash('sha256')
+      .update(data)
+      .digest('hex');
+  },
+
+  /**
+   * Extract JWT token from request
+   * @param {Object} req - Express request object
+   * @returns {string|null} JWT token or null
+   */
+  extractToken: (req) => {
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer ')
+    ) {
+      return req.headers.authorization.split(' ')[1];
     }
     
-    throw new UnauthorizedError('Invalid token. Please log in again.');
+    if (req.cookies && req.cookies.token) {
+      return req.cookies.token;
+    }
+    
+    return null;
   }
 };
 
-/**
- * Generate a random token
- * @param {Number} byteLength - Length of the random bytes
- * @returns {String} Hex encoded random token
- */
-const generateRandomToken = (byteLength = 32) => {
-  return crypto.randomBytes(byteLength).toString('hex');
-};
-
-/**
- * Create a hashed token for password reset or email verification
- * @param {String} token - Token to hash
- * @returns {String} Hashed token
- */
-const hashToken = (token) => {
-  return crypto
-    .createHash('sha256')
-    .update(token)
-    .digest('hex');
-};
-
-/**
- * Extract token from request
- * @param {Object} req - Express request object
- * @returns {String|null} JWT token or null if not found
- */
-const getTokenFromRequest = (req) => {
-  // Check authorization header
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    const token = req.headers.authorization.split(' ')[1];
-    if (token) return token;
-  }
-  
-  // Check cookies
-  if (req.cookies && req.cookies.jwt) {
-    return req.cookies.jwt;
-  }
-  
-  // No token found
-  return null;
-};
-
-/**
- * Set JWT cookie
- * @param {Object} res - Express response object
- * @param {String} token - JWT token
- * @param {Boolean} secure - Whether cookie should be secure (HTTPS only)
- * @returns {Object} Express response object
- */
-const sendTokenCookie = (res, token) => {
-  // Calculate expiration
-  const expirationDays = parseInt(config.jwt.cookieExpiresIn, 10);
-  const expiresIn = new Date(
-    Date.now() + expirationDays * 24 * 60 * 60 * 1000
-  );
-
-  const cookieOptions = {
-    expires: expiresIn,
-    httpOnly: true, // Cannot be accessed by JavaScript
-    sameSite: 'strict', // Strict same-site policy
-    secure: config.env === 'production', // HTTPS only in production
-    path: '/' // Available across the domain
-  };
-
-  return res.cookie('jwt', token, cookieOptions);
-};
-
-/**
- * Clear JWT cookie (for logout)
- * @param {Object} res - Express response object
- * @returns {Object} Express response object
- */
-const clearTokenCookie = (res) => {
-  return res.cookie('jwt', 'logged-out', {
-    expires: new Date(Date.now() + 10 * 1000), // 10 seconds
-    httpOnly: true,
-    sameSite: 'strict'
-  });
-};
-
-module.exports = {
-  generateToken,
-  verifyToken,
-  generateRandomToken,
-  hashToken,
-  getTokenFromRequest,
-  sendTokenCookie,
-  clearTokenCookie
-};
+module.exports = authUtil;
