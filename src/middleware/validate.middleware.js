@@ -1,16 +1,6 @@
 // src/middleware/validate.middleware.js
 
 /**
- * Request validation middleware using Joi
- * Validates request body, query parameters, and URL parameters
- * against predefined schemas
- */
-
-const Joi = require('joi');
-const { ValidationError } = require('../utils/errors');
-const logger = require('../utils/logger');
-
-/**
  * Middleware for request validation using Joi schemas
  * @param {Object} schema - Joi validation schema
  * @returns {Function} Express middleware function

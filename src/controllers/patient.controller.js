@@ -9,6 +9,8 @@ const { success } = require('../utils/response.util');
 const Patient = require('../models/patient.model');
 const { NotFoundError } = require('../utils/errors/NotFoundError');
 const auditLogger = require('../utils/audit-logger');
+const patientService = require('../services/patient.service');
+
 
 /**
  * Get all patients with pagination and filtering
