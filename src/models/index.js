@@ -11,6 +11,7 @@ const Patient = require('./patient.model');
 const  RefreshToken = require('./refresh-token.model');
 const Session = require('./session.model');
 const TokenBlacklist = require('./token-blacklist.model');
+const ActivityLog = require('./activity-log.model');
 
 /**
  * CHANGES:
@@ -27,5 +28,6 @@ module.exports = {
   Session,
   RefreshToken,
   Role,
+  ActivityLog,
   VerificationToken
 };
