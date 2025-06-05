@@ -893,6 +893,8 @@ patientSchema.virtual('age').get(function() {
   return age;
 });
 
+
+
 // Virtual for full name through user reference
 patientSchema.virtual('fullName').get(function() {
   if (this.user && this.populated('user')) {
@@ -987,13 +989,22 @@ patientSchema.methods.getFieldsVisibleTo = function(role) {
 };
 
 // Indexes for efficient queries
-patientSchema.index({ 'user': 1 });
-patientSchema.index({ 'registrationStatus': 1 });
+// CHANGE: Add more indexes for efficient searching
+patientSchema.index({ 'userData.firstName': 'text', 'userData.lastName': 'text' });
 patientSchema.index({ 'insurance.provider': 1 });
+patientSchema.index({ 'registrationStatus': 1 });
+patientSchema.index({ 'dateOfBirth': 1 });
+patientSchema.index({ 'gender': 1 });
+patientSchema.index({ 'bloodType': 1 });
+patientSchema.index({ 'phoneNumber': 1 });
+patientSchema.index({ 'alternatePhoneNumber': 1 });
+patientSchema.index({ 'medicalRecordNumber': 1 });
 patientSchema.index({ 'registrationDate': 1 });
 patientSchema.index({ 'lastUpdated.date': -1 });
-patientSchema.index({ 'dateOfBirth': 1 });
-patientSchema.index({ 'profileCompleteness': 1 });
+patientSchema.index({ 'primaryCarePhysician.name': 1 });
+patientSchema.index({ 'allergies.allergen': 1 });
+patientSchema.index({ 'medications.name': 1 });
+patientSchema.index({ 'medicalHistory.condition': 1 });
 
 const Patient = mongoose.model('Patient', patientSchema);
 
