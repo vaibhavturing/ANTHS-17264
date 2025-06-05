@@ -1,116 +1,115 @@
-// src/validators/auth.validator.js
+// File: src/validators/auth.validator.js
+// Complete validation schemas for auth routes
 
 const Joi = require('joi');
 
-// Define regex patterns directly as RegExp objects
-const emailRegex = new RegExp('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
-const passwordRegex = new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$');
-const nameRegex = new RegExp('^[A-Za-z\\s\'-]{1,50}$');
-const phoneRegex = new RegExp('^\\+?[1-9]\\d{1,14}$');
-
-// EXISTING CODE: Registration validation schema
-const registerSchema = Joi.object({
-  email: Joi.string().required().pattern(emailRegex).trim().lowercase()
-    .messages({
-      'string.pattern.base': 'Email must be in a valid format',
-      'string.empty': 'Email cannot be empty',
+/**
+ * Validation schemas for authentication routes
+ */
+const authValidator = {
+  /**
+   * Schema for user registration
+   */
+  register: Joi.object({
+    email: Joi.string().email().required().messages({
+      'string.email': 'Please provide a valid email address',
+      'string.empty': 'Email is required',
       'any.required': 'Email is required'
     }),
-  password: Joi.string().min(8).required().pattern(passwordRegex)
-    .messages({
-      'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
-      'string.min': 'Password must be at least 8 characters long',
-      'string.empty': 'Password cannot be empty',
-      'any.required': 'Password is required'
+    password: Joi.string().min(8).required()
+      .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/)
+      .messages({
+        'string.empty': 'Password is required',
+        'string.min': 'Password must be at least {#limit} characters long',
+        'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+        'any.required': 'Password is required'
+      }),
+    confirmPassword: Joi.string().valid(Joi.ref('password')).required().messages({
+      'string.empty': 'Confirm password is required',
+      'any.only': 'Passwords must match',
+      'any.required': 'Confirm password is required'
     }),
-  firstName: Joi.string().required().pattern(nameRegex).trim()
-    .messages({
-      'string.pattern.base': 'First name must contain only letters, spaces, hyphens, and apostrophes',
-      'string.empty': 'First name cannot be empty',
+    firstName: Joi.string().required().messages({
+      'string.empty': 'First name is required',
       'any.required': 'First name is required'
     }),
-  lastName: Joi.string().required().pattern(nameRegex).trim()
-    .messages({
-      'string.pattern.base': 'Last name must contain only letters, spaces, hyphens, and apostrophes',
-      'string.empty': 'Last name cannot be empty',
+    lastName: Joi.string().required().messages({
+      'string.empty': 'Last name is required',
       'any.required': 'Last name is required'
     }),
-  role: Joi.string().required().valid('patient', 'doctor', 'nurse', 'admin')
-    .messages({
-      'any.only': 'Role must be one of: patient, doctor, nurse, admin',
-      'string.empty': 'Role cannot be empty',
-      'any.required': 'Role is required'
-    }),
-  // Rest of the existing registration schema...
-  // [skipping the rest for brevity]
-}).options({ abortEarly: false });
+    role: Joi.string().valid('admin', 'doctor', 'nurse', 'patient').default('patient').messages({
+      'any.only': 'Role must be one of: admin, doctor, nurse, patient'
+    })
+  }),
 
-// UPDATED: Enhanced login schema with remember me option
-const loginSchema = Joi.object({
-  email: Joi.string().required().pattern(emailRegex).trim().lowercase()
-    .messages({
-      'string.pattern.base': 'Email must be in a valid format',
-      'string.empty': 'Email cannot be empty',
+  /**
+   * Schema for user login
+   */
+  login: Joi.object({
+    email: Joi.string().email().required().messages({
+      'string.email': 'Please provide a valid email address',
+      'string.empty': 'Email is required',
       'any.required': 'Email is required'
     }),
-  password: Joi.string().required()
-    .messages({
-      'string.empty': 'Password cannot be empty',
+    password: Joi.string().required().messages({
+      'string.empty': 'Password is required',
       'any.required': 'Password is required'
-    }),
-  // ADDED: Remember me option for extended session
-  rememberMe: Joi.boolean().default(false)
-}).options({ abortEarly: false });
+    })
+  }),
 
-// ADDED: Refresh token schema
-const refreshTokenSchema = Joi.object({
-  refreshToken: Joi.string().required()
-    .messages({
-      'string.empty': 'Refresh token cannot be empty',
+  /**
+   * Schema for refresh token
+   */
+  refreshToken: Joi.object({
+    refreshToken: Joi.string().required().messages({
+      'string.empty': 'Refresh token is required',
       'any.required': 'Refresh token is required'
     })
-}).options({ abortEarly: false });
+  }),
 
-// EXISTING CODE: Password reset request schema
-const passwordResetRequestSchema = Joi.object({
-  email: Joi.string().required().pattern(emailRegex).trim().lowercase()
-    .messages({
-      'string.pattern.base': 'Email must be in a valid format',
-      'string.empty': 'Email cannot be empty',
+  /**
+   * Schema for verify email
+   */
+  verifyEmail: Joi.object({
+    token: Joi.string().required().messages({
+      'string.empty': 'Verification token is required',
+      'any.required': 'Verification token is required'
+    })
+  }),
+
+  /**
+   * Schema for resend verification email
+   */
+  resendVerification: Joi.object({
+    email: Joi.string().email().required().messages({
+      'string.email': 'Please provide a valid email address',
+      'string.empty': 'Email is required',
       'any.required': 'Email is required'
     })
-}).options({ abortEarly: false });
+  }),
 
-// EXISTING CODE: Password reset schema
-const passwordResetSchema = Joi.object({
-  token: Joi.string().required()
-    .messages({
-      'string.empty': 'Token cannot be empty',
-      'any.required': 'Token is required'
+  /**
+   * Schema for password change
+   */
+  changePassword: Joi.object({
+    currentPassword: Joi.string().required().messages({
+      'string.empty': 'Current password is required',
+      'any.required': 'Current password is required'
     }),
-  password: Joi.string().min(8).required().pattern(passwordRegex)
-    .messages({
-      'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
-      'string.min': 'Password must be at least 8 characters long',
-      'string.empty': 'Password cannot be empty',
-      'any.required': 'Password is required'
+    newPassword: Joi.string().min(8).required()
+      .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/)
+      .messages({
+        'string.empty': 'New password is required',
+        'string.min': 'New password must be at least {#limit} characters long',
+        'string.pattern.base': 'New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+        'any.required': 'New password is required'
+      }),
+    confirmPassword: Joi.string().valid(Joi.ref('newPassword')).required().messages({
+      'string.empty': 'Confirm password is required',
+      'any.only': 'Passwords must match',
+      'any.required': 'Confirm password is required'
     })
-}).options({ abortEarly: false });
-
-// ADDED: Logout schema
-const logoutSchema = Joi.object({
-  refreshToken: Joi.string()
-    .messages({
-      'string.empty': 'Refresh token cannot be empty'
-    }),
-  allDevices: Joi.boolean().default(false)
-}).options({ abortEarly: false });
-
-module.exports = {
-  registerSchema,
-  loginSchema,
-  refreshTokenSchema,
-  passwordResetRequestSchema,
-  passwordResetSchema,
-  logoutSchema
+  })
 };
+
+module.exports = authValidator;
