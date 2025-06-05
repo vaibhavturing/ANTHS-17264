@@ -18,6 +18,8 @@ const medicalRecordRoutes = require('./medicalRecord.routes');
 const adminRoutes = require('./admin.routes');
 const healthRoutes = require('./health.routes');
 const profileRoutes = require('./profile.routes');
+const sessionRoutes = require('./sessions.routes'); // New session routes
+
 
 
 
@@ -50,6 +52,9 @@ const mountRoutes = () => {
   logger.debug('Mounted health check routes at /health');
 
   router.use('/profile', profileRoutes); // ADDED: Mount profile routes
+
+  router.use('/api/sessions', sessionRoutes); // Mount session routes
+
 
 
   // All routes below this point require authentication

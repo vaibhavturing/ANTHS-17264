@@ -1,10 +1,13 @@
-// src/services/auth.service.js
+// File: src/services/auth.service.js
+// Updated to integrate with session management
 
 const User = require('../models/user.model');
-const RefreshToken = require('../models/refreshToken.model');
-const crypto = require('crypto');
-const bcrypt = require('bcrypt');
 const authUtil = require('../utils/auth.util');
+const sessionService = require('./session.service');
+const { AuthenticationError } = require('../utils/errors');
+const logger = require('../utils/logger');
+const config = require('../config/config');
+
 /**
  * Authentication service
  */

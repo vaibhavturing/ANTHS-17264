@@ -1,7 +1,10 @@
+// File: src/routes/sessions.routes.js
+// New routes for session management
+
 const express = require('express');
 const router = express.Router();
 const sessionController = require('../controllers/session.controller');
-const { authMiddleware } = require('../middleware/auth.middleware');
+const authMiddleware = require('../middleware/auth.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
 const sessionValidator = require('../validators/session.validator');
 
@@ -14,6 +17,24 @@ router.use(authMiddleware.authenticate);
  * @access Private
  */
 router.get('/', sessionController.getActiveSessions);
+
+/**
+ * @route GET /api/sessions/preferences
+ * @description Get user's session preferences
+ * @access Private
+ */
+router.get('/preferences', sessionController.getSessionPreferences);
+
+/**
+ * @route PUT /api/sessions/preferences
+ * @description Update user's session preferences
+ * @access Private
+ */
+router.put(
+  '/preferences',
+  validateMiddleware(sessionValidator.updatePreferencesSchema),
+  sessionController.updateSessionPreferences
+);
 
 /**
  * @route DELETE /api/sessions/:id
@@ -38,24 +59,6 @@ router.patch(
   '/:id',
   validateMiddleware(sessionValidator.updateSessionNameSchema),
   sessionController.updateSessionName
-);
-
-/**
- * @route GET /api/sessions/preferences
- * @description Get user's session preferences
- * @access Private
- */
-router.get('/preferences', sessionController.getSessionPreferences);
-
-/**
- * @route PUT /api/sessions/preferences
- * @description Update user's session preferences
- * @access Private
- */
-router.put(
-  '/preferences',
-  validateMiddleware(sessionValidator.updatePreferencesSchema),
-  sessionController.updateSessionPreferences
 );
 
 module.exports = router;

@@ -1,6 +1,9 @@
-const { Session } = require('../models/session.model');
-const { TokenBlacklist } = require('../models/token-blacklist.model');
-const  { User }  = require('../models/user.model');
+// File: src/services/session.service.js
+// New service for managing user sessions
+
+const User = require('../models/user.model');
+const Session = require('../models/session.model');
+const TokenBlacklist = require('../models/token-blacklist.model');
 const logger = require('../utils/logger');
 const config = require('../config/config');
 const { v4: uuidv4 } = require('uuid');

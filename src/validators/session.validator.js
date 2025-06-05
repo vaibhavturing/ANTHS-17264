@@ -1,3 +1,6 @@
+// File: src/validators/session.validator.js
+// New validator for session management endpoints
+
 const Joi = require('joi');
 
 /**

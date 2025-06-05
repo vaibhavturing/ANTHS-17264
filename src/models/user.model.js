@@ -1,3 +1,6 @@
+// File: src/models/user.model.js
+// Updated to include session management fields
+
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');

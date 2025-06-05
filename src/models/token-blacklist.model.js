@@ -1,3 +1,6 @@
+// File: src/models/token-blacklist.model.js
+// New file for token blacklisting model
+
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
 const logger = require('../utils/logger');

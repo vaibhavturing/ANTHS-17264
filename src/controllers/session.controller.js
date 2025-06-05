@@ -1,4 +1,7 @@
-const { sessionService } = require('../services/session.service');
+// File: src/controllers/session.controller.js
+// New controller for session management endpoints
+
+const sessionService = require('../services/session.service');
 const { ResponseUtil } = require('../utils/response.util');
 const asyncHandler = require('../utils/async-handler.util');
 const logger = require('../utils/logger');

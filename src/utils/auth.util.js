@@ -1,3 +1,6 @@
+// File: src/utils/auth.util.js
+// Updated to include session tracking with token IDs
+
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const config = require('../config/config');
@@ -44,9 +47,9 @@ const authUtil = {
       
       return jwt.sign(
         {...payload, jti},
-        config.JWT_REFRESH_SECRET,
+        config.JWT_REFRESH_SECRET || config.JWT_SECRET + '_refresh',
         {
-          expiresIn: config.JWT_REFRESH_EXPIRATION
+          expiresIn: config.JWT_REFRESH_EXPIRATION || '7d'
         }
       );
     } catch (error) {
@@ -76,7 +79,7 @@ const authUtil = {
    */
   verifyRefreshToken: (token) => {
     try {
-      return jwt.verify(token, config.JWT_REFRESH_SECRET);
+      return jwt.verify(token, config.JWT_REFRESH_SECRET || config.JWT_SECRET + '_refresh');
     } catch (error) {
       logger.warn('Refresh token verification failed', { error: error.message });
       return null;

@@ -1,3 +1,6 @@
+// File: src/models/session.model.js
+// New file for session management models
+
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
 const logger = require('../utils/logger');

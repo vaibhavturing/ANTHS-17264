@@ -138,7 +138,7 @@ router.post(
  */
 router.post(
   '/logout',
-  validate(logoutSchema),
+  authMiddleware.authenticate,
   authController.logout
 );
 
