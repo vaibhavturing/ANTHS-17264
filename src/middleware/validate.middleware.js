@@ -11,74 +11,51 @@ const { ValidationError } = require('../utils/errors');
 const logger = require('../utils/logger');
 
 /**
- * Create validation middleware with specified schemas
- * 
- * @param {Object} schema - Validation schemas for different parts of the request
- * @param {Object} options - Validation options
+ * Middleware for request validation using Joi schemas
+ * @param {Object} schema - Joi validation schema
  * @returns {Function} Express middleware function
  */
-const validate = (schema, options = {}) => {
-  // Set default options
-  const defaultOptions = {
-    abortEarly: false, // Return all errors, not just the first one
-    allowUnknown: true, // Allow unknown properties (they will be ignored)
-    stripUnknown: false, // Don't remove unknown properties
-    ...options
-  };
-  
-  // Return middleware function
+const validate = (schema) => {
   return (req, res, next) => {
-    // Only validate parts of the request for which schemas are provided
-    const validationSchemas = {
-      body: schema.body ? { schema: schema.body, value: req.body } : null,
-      params: schema.params ? { schema: schema.params, value: req.params } : null,
-      query: schema.query ? { schema: schema.query, value: req.query } : null,
-      headers: schema.headers ? { schema: schema.headers, value: req.headers } : null
-    };
-    
-    // Track validation errors
-    const validationErrors = {};
-    
-    // Validate each part of the request
-    for (const [part, validation] of Object.entries(validationSchemas)) {
-      if (!validation) continue;
+    try {
+      const { error, value } = schema.validate(req.body, {
+        abortEarly: false, // Return all errors, not just the first one
+        stripUnknown: true, // Remove unknown keys from the validated data
+        errors: { 
+          wrap: { 
+            label: '' // Don't wrap field names in quotes
+          } 
+        }
+      });
       
-      const { schema, value } = validation;
-      
-      const { error, value: validatedValue } = schema.validate(value, defaultOptions);
-      
-      // If validation passed, update the request with validated values
-      if (!error) {
-        req[part] = validatedValue;
-        continue;
+      if (error) {
+        const errorDetails = error.details.map(detail => ({
+          field: detail.path.join('.'),
+          message: detail.message
+        }));
+        
+        logger.debug('Validation error', { 
+          path: req.path, 
+          errors: errorDetails 
+        });
+        
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Validation failed',
+            type: 'VALIDATION_ERROR',
+            details: errorDetails
+          }
+        });
       }
       
-      // Collect all validation errors
-      validationErrors[part] = error.details.map(detail => ({
-        message: detail.message.replace(/['"]/g, ''),
-        path: detail.path,
-        type: detail.type
-      }));
-      
-      // Log validation error details
-      logger.debug(`Validation error in ${part}:`, { 
-        errors: validationErrors[part],
-        path: req.path
-      });
+      // Replace request body with validated data
+      req.body = value;
+      next();
+    } catch (error) {
+      logger.error('Validation middleware error', { error: error.message });
+      next(error);
     }
-    
-    // If any validation errors occurred, return them all
-    if (Object.keys(validationErrors).length > 0) {
-      return next(new ValidationError(
-        'Request validation failed',
-        { errors: validationErrors },
-        'VALIDATION_ERROR'
-      ));
-    }
-    
-    // All validations passed
-    return next();
   };
 };
-
 module.exports = validate;

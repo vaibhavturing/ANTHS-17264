@@ -1,317 +1,323 @@
-/**
- * Healthcare Management Application
- * Patient Model
- * 
- * Schema for patient records with comprehensive medical information
- * Designed with HIPAA compliance considerations
- */
-
 const mongoose = require('mongoose');
-const { createSchema } = require('./baseSchema');
+const bcrypt = require('bcrypt');
+const baseSchema = require('./baseSchema');
+const logger = require('../utils/logger');
 
-/**
- * Blood type enumeration
- */
-const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-
-/**
- * Patient schema definition
- * Contains PHI (Protected Health Information) that must be handled according to HIPAA
- */
-const patientSchema = createSchema({
-  // Reference to user model for authentication and basic info
-  userId: {
+const patientSchema = new mongoose.Schema({
+  // Link to user account for authentication
+  user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'User reference is required']
+    required: true
   },
   
-  // Medical Record Number (unique identifier in the healthcare system)
-  mrn: {
-    type: String,
-    required: [true, 'Medical Record Number is required'],
-    unique: true,
-    trim: true,
-    index: true
-  },
-  
-  // Demographic data
-  gender: {
-    type: String,
-    enum: {
-      values: ['male', 'female', 'other', 'prefer-not-to-say'],
-      message: 'Gender must be male, female, other, or prefer-not-to-say'
-    },
-    required: [true, 'Gender is required']
-  },
-  
+  // Demographics
   dateOfBirth: {
     type: Date,
-    required: [true, 'Date of birth is required'],
+    required: true,
     validate: {
       validator: function(dob) {
-        return dob < new Date();
+        return dob <= new Date();
       },
-      message: 'Date of birth must be in the past'
+      message: 'Date of birth cannot be in the future'
     }
   },
-  
+  gender: {
+    type: String,
+    enum: ['Male', 'Female', 'Other', 'Prefer not to say'],
+    required: true
+  },
   ssn: {
     type: String,
-    match: [
-      /^\d{3}-\d{2}-\d{4}$/,
-      'Please enter a valid SSN in format XXX-XX-XXXX'
-    ],
-    select: false  // Protected field, only explicitly requested
+    required: true,
+    unique: true,
+    maxlength: 11,
+    minlength: 9,
+    // Store encrypted
+    select: false
+  },
+  maritalStatus: {
+    type: String,
+    enum: ['Single', 'Married', 'Divorced', 'Widowed', 'Other'],
+    default: 'Single'
   },
   
   // Contact information
-  contactDetails: {
-    primaryPhone: {
-      type: String,
-      required: [true, 'Primary phone number is required'],
-      match: [
-        /^\+?[1-9]\d{9,14}$/,
-        'Please provide a valid phone number'
-      ]
-    },
-    secondaryPhone: String,
-    email: {
-      type: String,
-      match: [
-        /^([\w-\.]+@([\w-]+\.)+[\w-]{2,4})?$/,
-        'Please provide a valid email address'
-      ]
-    },
-    preferredContactMethod: {
-      type: String,
-      enum: ['phone', 'email', 'mail'],
-      default: 'phone'
-    }
-  },
-  
-  // Address information
   address: {
     street: {
       type: String,
-      required: [true, 'Street address is required']
+      required: true
     },
     city: {
       type: String,
-      required: [true, 'City is required']
+      required: true
     },
     state: {
       type: String,
-      required: [true, 'State is required']
+      required: true
     },
     zipCode: {
       type: String,
-      required: [true, 'ZIP code is required'],
-      match: [
-        /^\d{5}(-\d{4})?$/,
-        'Please provide a valid ZIP code'
-      ]
+      required: true
     },
     country: {
       type: String,
+      required: true,
       default: 'United States'
     }
   },
+  phoneNumber: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(v) {
+        return /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/.test(v);
+      },
+      message: props => `${props.value} is not a valid phone number!`
+    }
+  },
+  alternatePhoneNumber: {
+    type: String,
+    validate: {
+      validator: function(v) {
+        // Allow empty string
+        if (!v) return true;
+        return /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/.test(v);
+      },
+      message: props => `${props.value} is not a valid phone number!`
+    }
+  },
+  preferredContactMethod: {
+    type: String,
+    enum: ['Phone', 'Email', 'Mail'],
+    default: 'Phone'
+  },
   
-  // Emergency contact information
-  emergencyContact: {
+  // Medical Information
+  bloodType: {
+    type: String,
+    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown'],
+    default: 'Unknown'
+  },
+  allergies: [{
+    allergen: String,
+    severity: {
+      type: String,
+      enum: ['Mild', 'Moderate', 'Severe', 'Life-threatening']
+    },
+    reaction: String
+  }],
+  currentMedications: [{
+    name: String,
+    dosage: String,
+    frequency: String,
+    startDate: Date,
+    endDate: Date
+  }],
+  chronicConditions: [String],
+  familyMedicalHistory: [{
+    condition: String,
+    relationship: String
+  }],
+  pastSurgeries: [{
+    procedure: String,
+    date: Date,
+    hospital: String,
+    surgeon: String,
+    notes: String
+  }],
+  primaryCarePhysician: {
+    name: String,
+    contact: String,
+    facility: String
+  },
+  
+  // Insurance Information
+  insurance: {
+    provider: {
+      type: String,
+      required: true
+    },
+    policyNumber: {
+      type: String,
+      required: true,
+      select: false
+    },
+    groupNumber: {
+      type: String,
+      select: false
+    },
+    policyHolder: {
+      type: String,
+      default: 'Self'
+    },
+    relationshipToPatient: {
+      type: String,
+      enum: ['Self', 'Spouse', 'Parent', 'Other'],
+      default: 'Self'
+    },
+    expirationDate: Date
+  },
+  secondaryInsurance: {
+    provider: String,
+    policyNumber: {
+      type: String,
+      select: false
+    },
+    groupNumber: {
+      type: String,
+      select: false
+    },
+    policyHolder: String,
+    relationshipToPatient: {
+      type: String,
+      enum: ['Self', 'Spouse', 'Parent', 'Other']
+    },
+    expirationDate: Date
+  },
+  
+  // Emergency Contacts
+  emergencyContacts: [{
     name: {
       type: String,
-      required: [true, 'Emergency contact name is required']
+      required: true
     },
     relationship: {
       type: String,
-      required: [true, 'Relationship is required']
+      required: true
     },
-    phone: {
+    phoneNumber: {
       type: String,
-      required: [true, 'Emergency contact phone is required'],
-      match: [
-        /^\+?[1-9]\d{9,14}$/,
-        'Please provide a valid phone number'
-      ]
+      required: true
     },
-    address: String
-  },
-  
-  // Insurance information
-  insurance: {
-    provider: String,
-    policyNumber: String,
-    groupNumber: String,
-    policyHolder: {
-      name: String,
-      relationship: String,
-      dateOfBirth: Date
-    },
-    coverageStartDate: Date,
-    coverageEndDate: Date
-  },
-  
-  // Medical information
-  medicalInformation: {
-    bloodType: {
-      type: String,
-      enum: {
-        values: BLOOD_TYPES,
-        message: `Blood type must be one of: ${BLOOD_TYPES.join(', ')}`
-      }
-    },
-    height: {  // in centimeters
-      type: Number,
-      min: [30, 'Height must be at least 30 cm'],
-      max: [250, 'Height cannot exceed 250 cm']
-    },
-    weight: {  // in kilograms
-      type: Number,
-      min: [1, 'Weight must be at least 1 kg'],
-      max: [500, 'Weight cannot exceed 500 kg']
-    },
-    allergies: [{
-      allergen: String,
-      severity: {
-        type: String,
-        enum: ['mild', 'moderate', 'severe', 'life-threatening']
-      },
-      reaction: String,
-      identified: Date
-    }],
-    medications: [{
-      name: {
-        type: String,
-        required: true
-      },
-      dosage: String,
-      frequency: String,
-      startDate: Date,
-      endDate: Date,
-      prescribedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Doctor'
-      }
-    }],
-    chronicConditions: [String],
-    familyMedicalHistory: {
-      type: String,
-      // Using select:false for HIPAA-sensitive data
-      select: false
+    address: String,
+    isAuthorizedToDiscussHealth: {
+      type: Boolean,
+      default: false
     }
-  },
+  }],
   
-  // Primary care physician
-  primaryCarePhysician: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Doctor'
-  },
-  
-  // Patient status
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'deceased'],
-    default: 'active'
-  },
-  
-  // Administrative information
-  administrativeInformation: {
-    registrationDate: {
+  // Consent and Documentation
+  consents: [{
+    type: {
+      type: String,
+      enum: ['Treatment', 'HIPAA', 'Research', 'DataSharing', 'Telemedicine'],
+      required: true
+    },
+    givenDate: {
       type: Date,
       default: Date.now
     },
-    lastVisit: Date,
-    consentForms: [{
-      formType: String,
-      signedDate: Date,
-      expiryDate: Date,
-      formData: {
-        type: Object,
-        select: false  // Protected field, only explicitly requested
-      }
-    }]
-  },
-  
-  // HIPAA acknowledgement
-  hipaaAcknowledgement: {
-    acknowledged: {
+    expirationDate: Date,
+    documentReference: String,
+    revoked: {
       type: Boolean,
       default: false
     },
-    acknowledgedDate: Date,
-    lastUpdated: Date
-  },
+    revokedDate: Date
+  }],
   
-  // Patient preferences
-  preferences: {
-    language: {
-      type: String,
-      default: 'English'
-    },
-    communicationPreferences: {
-      appointmentReminders: {
-        type: Boolean,
-        default: true
-      },
-      method: {
-        type: String,
-        enum: ['email', 'phone', 'sms', 'mail'],
-        default: 'sms'
-      }
-    }
+  // Patient Portal Access
+  portalActivated: {
+    type: Boolean,
+    default: false
   },
+  activationDate: Date,
+  lastPortalAccess: Date,
   
-  notes: {
+  // Registration Status
+  registrationStatus: {
     type: String,
-    // Using select:false for potentially sensitive notes
-    select: false
+    enum: ['Incomplete', 'Pending', 'Approved', 'Rejected'],
+    default: 'Incomplete'
+  },
+  registrationDate: {
+    type: Date,
+    default: Date.now
+  },
+  registrationCompletedDate: Date,
+  missingDocuments: [String],
+  registrationNotes: String,
+  
+}, baseSchema.baseOptions);
+
+// Pre-save middleware to encrypt SSN
+patientSchema.pre('save', async function(next) {
+  // Only encrypt SSN if it's modified or new
+  if (!this.isModified('ssn')) return next();
+  
+  try {
+    const salt = await bcrypt.genSalt(12);
+    this.ssn = await bcrypt.hash(this.ssn, salt);
+    next();
+  } catch (error) {
+    logger.error('SSN encryption failed', { error: error.message });
+    next(new Error('Patient information processing failed'));
   }
-}, {
-  // Enable discriminator key for patient-specific types
-  discriminatorKey: 'patientType'
 });
 
-// Virtual property for age calculation
+// Pre-save middleware to encrypt insurance information
+patientSchema.pre('save', async function(next) {
+  try {
+    // Only encrypt policy numbers if modified
+    if (this.isModified('insurance.policyNumber')) {
+      const salt = await bcrypt.genSalt(10);
+      this.insurance.policyNumber = await bcrypt.hash(this.insurance.policyNumber, salt);
+    }
+    
+    if (this.secondaryInsurance && this.isModified('secondaryInsurance.policyNumber')) {
+      const salt = await bcrypt.genSalt(10);
+      this.secondaryInsurance.policyNumber = await bcrypt.hash(this.secondaryInsurance.policyNumber, salt);
+    }
+    next();
+  } catch (error) {
+    logger.error('Insurance information encryption failed', { error: error.message });
+    next(new Error('Patient information processing failed'));
+  }
+});
+
+// Method to validate an SSN against the stored encrypted version
+patientSchema.methods.validateSSN = async function(candidateSSN) {
+  try {
+    // We need to explicitly select the SSN field since it's not included by default
+    const patient = await mongoose.model('Patient').findById(this._id).select('+ssn');
+    return await bcrypt.compare(candidateSSN, patient.ssn);
+  } catch (error) {
+    logger.error('SSN validation failed', { error: error.message });
+    throw new Error('Patient information verification failed');
+  }
+};
+
+// Virtual for patient's full name
+patientSchema.virtual('fullName').get(function() {
+  // Relies on the populated user field
+  if (!this.populated('user')) {
+    return "Unknown";
+  }
+  return `${this.user.firstName} ${this.user.lastName}`;
+});
+
+// Virtual for patient's age
 patientSchema.virtual('age').get(function() {
   if (!this.dateOfBirth) return null;
   
   const today = new Date();
   const birthDate = new Date(this.dateOfBirth);
-  
   let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDifference = today.getMonth() - birthDate.getMonth();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
   
-  if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
   
   return age;
 });
 
-// Indexes for performance and lookups
-patientSchema.index({ userId: 1 }, { unique: true });
-patientSchema.index({ mrn: 1 }, { unique: true });
-patientSchema.index({ 'insurance.policyNumber': 1 });
-patientSchema.index({ primaryCarePhysician: 1 });
-patientSchema.index({ status: 1 });
-patientSchema.index({ 'contactDetails.primaryPhone': 1 });
+// Index for efficient queries
+patientSchema.index({ 'user': 1 });
+patientSchema.index({ 'registrationStatus': 1 });
+patientSchema.index({ 'insurance.provider': 1 });
 
-// Create timestamps for auditing
-patientSchema.set('timestamps', true);
-
-// Add HIPAA audit trail
-patientSchema.pre('save', function(next) {
-  // This could be expanded to include a more detailed audit trail
-  this.lastUpdated = new Date();
-  next();
-});
-
-// Create the model
 const Patient = mongoose.model('Patient', patientSchema);
 
-module.exports = {
-  Patient,
-  BLOOD_TYPES
-};
+module.exports = Patient;
