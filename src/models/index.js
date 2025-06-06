@@ -13,6 +13,8 @@ const Session = require('./session.model');
 const TokenBlacklist = require('./token-blacklist.model');
 const ActivityLog = require('./activity-log.model');
 const patientProfileVersion = require('./patientProfileVersion.model');
+const communication = require('./communication.model');
+const notification = require('./notification.model');
 
 /**
  * CHANGES:
@@ -28,7 +30,9 @@ module.exports = {
   Permission,
   Session,
   RefreshToken,
+  notification,
   Role,
+  coommunication,
   ActivityLog,
   patientProfileVersion,
   VerificationToken

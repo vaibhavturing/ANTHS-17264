@@ -19,6 +19,12 @@ const adminRoutes = require('./admin.routes');
 const healthRoutes = require('./health.routes');
 const profileRoutes = require('./profile.routes');
 
+const communicationRoutes = require('./communication.routes');
+const patientCommunicationRoutes = require('./patient-communication.routes');
+const appointmentNotificationRoutes = require('./appointment-notification.routes');
+const prescriptionNotificationRoutes = require('./prescription-notification.routes');
+const medicalRecordNotificationRoutes = require('./medical-record-notification.routes');
+const notificationRoutes = require('./notification.routes');
 
 const router = express.Router();
 
@@ -50,6 +56,13 @@ const mountRoutes = () => {
 
   router.use('/profile', profileRoutes); // ADDED: Mount profile routes
 
+
+  router.use('/communications', communicationRoutes);
+  router.use('/patients/communications', patientCommunicationRoutes);
+  router.use('/appointments/notifications', appointmentNotificationRoutes);
+  router.use('/prescriptions/notifications', prescriptionNotificationRoutes);
+  router.use('/medical-records/notifications', medicalRecordNotificationRoutes);
+  router.use('/notifications', notificationRoutes);
 
   // All routes below this point require authentication
   

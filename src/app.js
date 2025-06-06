@@ -16,6 +16,16 @@ const morganMiddleware = require('./middleware/morgan.middleware');
 const securityAuditLogger = require('./middleware/audit-logger.middleware');
 const { auditResourceAccess, auditAuthentication } = require('./middleware/audit-logger.middleware');  // Add this line
 
+// Add these lines in your import section of app.js
+const communicationRoutes = require('./routes/communication.routes');
+const patientCommunicationRoutes = require('./routes/patient-communication.routes');
+const appointmentNotificationRoutes = require('./routes/appointment-notification.routes');
+const prescriptionNotificationRoutes = require('./routes/prescription-notification.routes');
+const medicalRecordNotificationRoutes = require('./routes/medical-record-notification.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const scheduledTasksService = require('./services/scheduled-tasks.service');
+
+
 // Import required route modules - with error handling for modules that might not exist yet
 const loadRouteModule = (path) => {
   try {
@@ -55,6 +65,14 @@ if (Array.isArray(securityMiddleware)) {
   app.use(securityMiddleware);
 }
 
+
+// Add these routes to your app in the routes section
+app.use('/api/communications', communicationRoutes);
+app.use('/api/patients', patientCommunicationRoutes);
+app.use('/api/appointments', appointmentNotificationRoutes);
+app.use('/api/prescriptions', prescriptionNotificationRoutes);
+app.use('/api/medical-records', medicalRecordNotificationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 
 // Parse request bodies
