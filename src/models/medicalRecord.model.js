@@ -1,457 +1,271 @@
-/**
- * Healthcare Management Application
- * Medical Record Model
- * 
- * Schema for patient medical records with HIPAA compliance considerations
- * Includes comprehensive tracking of patient medical history, tests, and treatments
- */
+// src/models/medicalRecord.model.js
 
 const mongoose = require('mongoose');
-const { createSchema } = require('./baseSchema');
+const baseSchema = require('./baseSchema');
 
-/**
- * Types of medical records
- */
-const RECORD_TYPES = {
-  PROGRESS_NOTE: 'progress_note',
+// Define enum values for record categories
+const RECORD_CATEGORIES = {
   LAB_RESULT: 'lab_result',
   IMAGING: 'imaging',
-  MEDICATION: 'medication',
-  PROCEDURE: 'procedure',
-  VITAL_SIGNS: 'vital_signs',
-  ALLERGY: 'allergy',
-  IMMUNIZATION: 'immunization',
-  REFERRAL: 'referral',
-  DISCHARGE_SUMMARY: 'discharge_summary',
-  CONSULTATION: 'consultation',
-  SURGICAL_REPORT: 'surgical_report'
+  PRESCRIPTION: 'prescription',
+  VISIT_NOTE: 'visit_note',
+  SURGICAL_REPORT: 'surgical_report',
+  VACCINATION: 'vaccination',
+  ALLERGY_REPORT: 'allergy_report',
+  OTHER: 'other'
 };
 
-/**
- * Medical record schema definition
- */
-const medicalRecordSchema = createSchema({
-  // Patient reference
+// Define schema for file attachments
+const fileAttachmentSchema = new mongoose.Schema({
+  filename: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  originalName: {
+    type: String,
+    required: true
+  },
+  mimeType: {
+    type: String,
+    required: true
+  },
+  size: {
+    type: Number,
+    required: true
+  },
+  path: {
+    type: String,
+    required: true
+  },
+  uploadedAt: {
+    type: Date,
+    default: Date.now
+  },
+  uploadedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
+}, { _id: true });
+
+// Define access control schema
+const accessControlSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  accessLevel: {
+    type: String,
+    enum: ['read', 'write', 'admin'],
+    default: 'read'
+  },
+  grantedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  grantedAt: {
+    type: Date,
+    default: Date.now
+  },
+  expiresAt: {
+    type: Date
+  },
+  reason: {
+    type: String,
+    trim: true
+  }
+}, { _id: true });
+
+// Define audit log entry schema
+const auditLogEntrySchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  action: {
+    type: String,
+    enum: ['create', 'view', 'update', 'delete', 'share', 'print', 'download'],
+    required: true
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now
+  },
+  ipAddress: {
+    type: String
+  },
+  userAgent: {
+    type: String
+  },
+  details: {
+    type: String
+  }
+}, { _id: true });
+
+// Main medical record schema
+const medicalRecordSchema = new mongoose.Schema({
   patient: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Patient',
-    required: [true, 'Patient reference is required'],
+    required: true,
     index: true
   },
-  
-  // Record type
-  recordType: {
+  category: {
     type: String,
-    required: [true, 'Record type is required'],
-    enum: {
-      values: Object.values(RECORD_TYPES),
-      message: 'Invalid record type'
-    },
+    enum: Object.values(RECORD_CATEGORIES),
+    required: true,
     index: true
   },
-  
-  // Visit/encounter reference
-  visit: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Appointment',
-    index: true
+  title: {
+    type: String,
+    required: true,
+    trim: true
   },
-  
-  // Record date
+  description: {
+    type: String,
+    trim: true
+  },
   recordDate: {
     type: Date,
-    required: [true, 'Record date is required'],
-    default: Date.now,
+    required: true,
     index: true
   },
-  
-  // Provider who created the record
   provider: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Doctor',
-    required: [true, 'Provider is required']
+    ref: 'User',
+    required: true
   },
-  
-  // Facility where record was created
   facility: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Facility'
-  },
-  
-  // Chief complaint and diagnosis
-  chiefComplaint: String,
-  
-  diagnosis: [{
-    code: String,  // ICD-10 code
-    description: String,
-    diagnosisDate: Date,
-    diagnosedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    status: {
-      type: String,
-      enum: ['active', 'resolved', 'recurring']
-    },
-    notes: String
-  }],
-  
-  // Vital signs
-  vitalSigns: {
-    temperature: {
-      value: Number,
-      unit: {
-        type: String,
-        default: 'F',
-        enum: ['F', 'C']
-      }
-    },
-    bloodPressure: {
-      systolic: Number,
-      diastolic: Number,
-      position: {
-        type: String,
-        enum: ['sitting', 'standing', 'lying']
-      }
-    },
-    heartRate: Number,
-    respiratoryRate: Number,
-    oxygenSaturation: Number,
-    height: {
-      value: Number,
-      unit: {
-        type: String,
-        default: 'cm',
-        enum: ['cm', 'in']
-      }
-    },
-    weight: {
-      value: Number,
-      unit: {
-        type: String,
-        default: 'kg',
-        enum: ['kg', 'lb']
-      }
-    },
-    bmi: Number,
-    pain: {
-      score: {
-        type: Number,
-        min: 0,
-        max: 10
-      },
-      location: String
-    }
-  },
-  
-  // Clinical notes - narrative description of patient encounter
-  clinicalNotes: {
     type: String,
-    required: function() {
-      return this.recordType === RECORD_TYPES.PROGRESS_NOTE || 
-             this.recordType === RECORD_TYPES.CONSULTATION;
-    }
+    trim: true
   },
-  
-  // Subjective, Objective, Assessment, Plan format
-  soapNote: {
-    subjective: String,
-    objective: String,
-    assessment: String,
-    plan: String
+  isConfidential: {
+    type: Boolean,
+    default: false
   },
-  
-  // Treatments and procedures
-  procedures: [{
-    procedureCode: String, // CPT code
-    procedureName: String,
-    procedureDate: Date,
-    performedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    notes: String,
-    outcome: String,
-    complications: String
+  attachments: [fileAttachmentSchema],
+  content: {
+    type: Object,
+    // Stores structured data specific to the record category
+  },
+  accessControls: [accessControlSchema],
+  auditLog: [auditLogEntrySchema],
+  tags: [{
+    type: String,
+    trim: true
   }],
-  
-  // Medications
-  medications: [{
-    name: {
+  isFlagged: {
+    type: Boolean,
+    default: false
+  },
+  flagReason: {
+    type: String
+  },
+  externalReferences: [{
+    system: {
       type: String,
       required: true
     },
-    dosage: String,
-    route: {
+    identifier: {
       type: String,
-      enum: ['oral', 'intravenous', 'intramuscular', 'subcutaneous', 'topical', 'inhaled', 'other']
+      required: true
     },
-    frequency: String,
-    startDate: Date,
-    endDate: Date,
-    prescribedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    pharmacy: String,
-    prescriptionNumber: String,
-    instructions: String,
-    reason: String,
-    status: {
-      type: String,
-      enum: ['active', 'discontinued', 'completed'],
-      default: 'active'
+    url: {
+      type: String
     }
-  }],
-  
-  // Laboratory test results
-  labResults: [{
-    testName: String,
-    testCode: String,
-    collectedDate: Date,
-    receivedDate: Date,
-    resultDate: Date,
-    orderedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    performedBy: String, // Lab name or technician
-    result: String,
-    units: String,
-    referenceRange: String,
-    abnormalFlag: {
-      type: String,
-      enum: ['normal', 'low', 'high', 'critical']
-    },
-    notes: String
-  }],
-  
-  // Imaging studies
-  imagingResults: [{
-    studyType: {
-      type: String,
-      enum: ['X-ray', 'MRI', 'CT', 'Ultrasound', 'PET', 'Mammography', 'Other']
-    },
-    bodyPart: String,
-    orderedDate: Date,
-    performedDate: Date,
-    orderedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    findings: String,
-    impression: String,
-    imageUrl: String,
-    recommendedFollowUp: String
-  }],
-  
-  // Allergies and adverse reactions
-  allergies: [{
-    allergen: String,
-    allergenType: {
-      type: String,
-      enum: ['drug', 'food', 'environmental', 'other']
-    },
-    reaction: String,
-    severity: {
-      type: String,
-      enum: ['mild', 'moderate', 'severe', 'life-threatening']
-    },
-    onsetDate: Date,
-    status: {
-      type: String,
-      enum: ['active', 'inactive']
-    },
-    notes: String
-  }],
-  
-  // Immunizations
-  immunizations: [{
-    vaccine: String,
-    vaccinationDate: Date,
-    administeredBy: String,
-    manufacturer: String,
-    lotNumber: String,
-    expirationDate: Date,
-    site: {
-      type: String,
-      enum: ['left arm', 'right arm', 'left thigh', 'right thigh', 'other']
-    },
-    dose: String,
-    route: {
-      type: String,
-      enum: ['intramuscular', 'subcutaneous', 'intradermal', 'oral', 'other']
-    },
-    notes: String
-  }],
-  
-  // Attachments and documents
-  attachments: [{
-    name: String,
-    fileType: String,
-    url: String,
-    uploadedAt: {
-      type: Date,
-      default: Date.now
-    },
-    uploadedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    description: String,
-    tags: [String]
-  }],
-  
-  // Instructions for patient
-  patientInstructions: String,
-  
-  // Follow-up recommendations
-  followUp: {
-    recommended: Boolean,
-    timeframe: String, // e.g., "2 weeks", "3 months"
-    withProvider: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    reason: String,
-    notes: String
-  },
-  
-  // Referrals to other providers
-  referrals: [{
-    referredTo: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Doctor'
-    },
-    specialty: String,
-    reason: String,
-    urgency: {
-      type: String,
-      enum: ['routine', 'urgent', 'emergency']
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'scheduled', 'completed', 'declined']
-    },
-    notes: String
-  }],
-  
-  // HIPAA audit fields
-  accessLogs: [{
-    accessedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    accessedAt: {
-      type: Date,
-      default: Date.now
-    },
-    reason: String,
-    ipAddress: String,
-    action: {
-      type: String,
-      enum: ['viewed', 'created', 'updated', 'exported', 'printed']
+  }]
+}, baseSchema.baseOptions);
+
+// Add compound text index for search capabilities
+medicalRecordSchema.index(
+  { title: 'text', description: 'text', 'tags': 'text' },
+  { name: 'medical_record_text_index', weights: { title: 10, tags: 5, description: 3 } }
+);
+
+// Add query helper methods
+medicalRecordSchema.query.byPatient = function(patientId) {
+  return this.where({ patient: patientId });
+};
+
+medicalRecordSchema.query.byCategory = function(category) {
+  return this.where({ category });
+};
+
+medicalRecordSchema.query.byDateRange = function(startDate, endDate) {
+  return this.where({
+    recordDate: {
+      $gte: startDate,
+      $lte: endDate
     }
-  }],
-
-  // Electronic signature of provider
-  signature: {
-    signedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    signedAt: Date,
-    signatureData: String
-  },
-  
-  // Security and privacy
-  privacyLevel: {
-    type: String,
-    enum: ['normal', 'sensitive', 'restricted'],
-    default: 'normal'
-  },
-  
-  // Status of medical record
-  status: {
-    type: String,
-    enum: ['draft', 'final', 'amended', 'addendum'],
-    default: 'draft'
-  }
-},
-// Additional schema options
-{
-  // Special indexing for HIPAA audit capability
-  timestamps: {
-    createdAt: 'createdAt',
-    updatedAt: 'updatedAt'
-  }
-});
-
-// Middleware to automatically add HIPAA access log entry
-medicalRecordSchema.methods.logAccess = async function(userId, action, reason, ipAddress) {
-  this.accessLogs.push({
-    accessedBy: userId,
-    accessedAt: new Date(),
-    reason: reason || 'Patient care',
-    ipAddress: ipAddress,
-    action: action || 'viewed'
   });
-  
-  await this.save();
 };
 
-// Middleware to sign and finalize a record
-medicalRecordSchema.methods.signAndFinalize = async function(userId) {
-  if (this.status === 'final') {
-    throw new Error('Record is already finalized');
+// Add instance methods
+medicalRecordSchema.methods.addAuditLogEntry = function(entry) {
+  this.auditLog.push(entry);
+};
+
+medicalRecordSchema.methods.grantAccess = function(userId, accessLevel, grantedByUserId, reason = null, expiresAt = null) {
+  const existingAccessIndex = this.accessControls.findIndex(
+    access => access.user.toString() === userId.toString()
+  );
+
+  if (existingAccessIndex >= 0) {
+    // Update existing access
+    this.accessControls[existingAccessIndex].accessLevel = accessLevel;
+    this.accessControls[existingAccessIndex].grantedBy = grantedByUserId;
+    this.accessControls[existingAccessIndex].grantedAt = Date.now();
+    this.accessControls[existingAccessIndex].reason = reason;
+    this.accessControls[existingAccessIndex].expiresAt = expiresAt;
+  } else {
+    // Add new access control entry
+    this.accessControls.push({
+      user: userId,
+      accessLevel,
+      grantedBy: grantedByUserId,
+      reason,
+      expiresAt
+    });
   }
-  
-  this.status = 'final';
-  this.signature = {
-    signedBy: userId,
-    signedAt: new Date()
-  };
-  
-  return await this.save();
 };
 
-// Method to create an amendment
-medicalRecordSchema.methods.createAmendment = async function(amendmentText, userId) {
-  if (this.status !== 'final') {
-    throw new Error('Only finalized records can be amended');
-  }
-  
-  // Create a new record that references this one
-  const MedicalRecord = this.constructor;
-  const amendment = new MedicalRecord({
-    patient: this.patient,
-    recordType: this.recordType,
-    visit: this.visit,
-    recordDate: new Date(),
-    provider: userId,
-    facility: this.facility,
-    clinicalNotes: amendmentText,
-    status: 'amendment',
-    // Reference to the original record could be added here
-  });
-  
-  return await amendment.save();
+medicalRecordSchema.methods.revokeAccess = function(userId) {
+  this.accessControls = this.accessControls.filter(
+    access => access.user.toString() !== userId.toString()
+  );
 };
 
-// Indexes for performance
-medicalRecordSchema.index({ patient: 1, recordDate: -1 });
-medicalRecordSchema.index({ provider: 1, recordDate: -1 });
-medicalRecordSchema.index({ recordType: 1 });
-medicalRecordSchema.index({ visit: 1 });
-medicalRecordSchema.index({ 'diagnosis.code': 1 });
-medicalRecordSchema.index({ 'labResults.testCode': 1 });
-medicalRecordSchema.index({ 'medications.name': 1 });
-medicalRecordSchema.index({ 'accessLogs.accessedAt': 1 });
+medicalRecordSchema.methods.hasAccess = function(userId, requiredLevel = 'read') {
+  // Find the user's access control entry
+  const accessControl = this.accessControls.find(
+    access => access.user.toString() === userId.toString()
+  );
 
-// Create the model
+  // If no explicit access control exists, return false
+  if (!accessControl) return false;
+
+  // If access has expired, return false
+  if (accessControl.expiresAt && accessControl.expiresAt < new Date()) return false;
+
+  // Check required access level
+  const accessLevels = ['read', 'write', 'admin'];
+  const userAccessLevelIndex = accessLevels.indexOf(accessControl.accessLevel);
+  const requiredLevelIndex = accessLevels.indexOf(requiredLevel);
+
+  // User has sufficient access if their level is equal or higher than required
+  return userAccessLevelIndex >= requiredLevelIndex;
+};
+
+// Export the model and constants
 const MedicalRecord = mongoose.model('MedicalRecord', medicalRecordSchema);
 
 module.exports = {
   MedicalRecord,
-  RECORD_TYPES
+  RECORD_CATEGORIES,
+  accessLevels: ['read', 'write', 'admin'],
+  auditActions: ['create', 'view', 'update', 'delete', 'share', 'print', 'download']
 };
