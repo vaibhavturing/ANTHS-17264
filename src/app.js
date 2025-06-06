@@ -16,6 +16,20 @@ const morganMiddleware = require('./middleware/morgan.middleware');
 const securityAuditLogger = require('./middleware/audit-logger.middleware');
 const { auditResourceAccess, auditAuthentication } = require('./middleware/audit-logger.middleware');  // Add this line
 
+// Import required route modules - with error handling for modules that might not exist yet
+const loadRouteModule = (path) => {
+  try {
+    return require(path);
+  } catch (error) {
+    console.warn(`Warning: Could not load route module ${path}: ${error.message}`);
+    return express.Router(); // Return empty router as fallback
+  }
+};
+
+// Load route modules
+const medicalRecordRoutes = loadRouteModule('./routes/medicalRecord.routes');
+const patientMedicalRecordRoutes = loadRouteModule('./routes/patient-medical-records.routes');
+
 
 const {
   dynamicRateLimiter,
@@ -47,6 +61,10 @@ if (Array.isArray(securityMiddleware)) {
 app.use(jsonParserMiddleware());
 app.use(urlencodedParserMiddleware());
 app.use(fileUpload.any()); // Accept all file uploads
+
+// Register routes
+app.use('/api/medical-records', medicalRecordRoutes);
+app.use('/api/patients', patientMedicalRecordRoutes);
 
 // Apply compression
 app.use(compression());

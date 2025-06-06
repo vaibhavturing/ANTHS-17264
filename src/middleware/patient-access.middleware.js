@@ -1,8 +1,17 @@
 // src/middleware/patient-access.middleware.js
 
-const { Patient } = require('../models/patient.model');
+const mongoose = require('mongoose');
 const { AuthorizationError, NotFoundError } = require('../utils/errors');
 const logger = require('../utils/logger');
+
+// Get the patient model - ensuring we use proper model access
+const getPatientModel = () => {
+  try {
+    return mongoose.model('Patient');
+  } catch (error) {
+    return require('../models/patient.model').Patient;
+  }
+};
 
 /**
  * Middleware for handling patient data access control
@@ -19,6 +28,8 @@ const patientAccessMiddleware = {
       const patientId = req.params.patientId;
       const userId = req.user._id;
       
+      const Patient = getPatientModel();
+      
       // Get the patient
       const patient = await Patient.findById(patientId);
       
@@ -27,21 +38,26 @@ const patientAccessMiddleware = {
       }
       
       // Admins always have access
-      if (req.user.roles.some(role => role.name === 'admin')) {
+      const isAdmin = (req.user.roles && req.user.roles.some(role => role.name === 'admin')) || 
+                     req.user.role === 'admin';
+      if (isAdmin) {
         return next();
       }
       
       // Medical providers (doctors, nurses) have access to their patients
-      if (req.user.roles.some(role => ['doctor', 'nurse'].includes(role.name))) {
+      const isProvider = (req.user.roles && req.user.roles.some(role => ['doctor', 'nurse'].includes(role.name))) || 
+                        ['doctor', 'nurse'].includes(req.user.role);
+      if (isProvider) {
         return next();
       }
       
       // Patients only have access to their own data
-      if (
-        req.user.roles.some(role => role.name === 'patient') && 
-        patient.user && 
-        patient.user.toString() === userId.toString()
-      ) {
+      const isPatient = (req.user.roles && req.user.roles.some(role => role.name === 'patient')) || 
+                       req.user.role === 'patient';
+                       
+      const patientIsUser = patient.user && patient.user.toString() === userId.toString();
+      
+      if (isPatient && patientIsUser) {
         return next();
       }
       

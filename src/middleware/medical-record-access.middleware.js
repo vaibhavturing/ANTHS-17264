@@ -27,23 +27,28 @@ const medicalRecordAccessMiddleware = {
         }
         
         // Admins always have access
-        if (req.user.roles.some(role => role.name === 'admin')) {
+        if (req.user.roles && req.user.roles.some(role => role.name === 'admin')) {
+          return next();
+        }
+        
+        // For back-compatibility, also check the role string
+        if (req.user.role === 'admin') {
           return next();
         }
         
         // Medical providers (doctors, nurses) have access to records they created
-        if (
-          req.user.roles.some(role => ['doctor', 'nurse'].includes(role.name)) && 
-          medicalRecord.provider.toString() === userId.toString()
-        ) {
+        const isProvider = (req.user.roles && req.user.roles.some(role => ['doctor', 'nurse'].includes(role.name))) ||
+                          ['doctor', 'nurse'].includes(req.user.role);
+                          
+        if (isProvider && medicalRecord.provider.toString() === userId.toString()) {
           return next();
         }
         
         // Patients have access to their own records
-        if (
-          req.user.roles.some(role => role.name === 'patient') && 
-          medicalRecord.patient.toString() === userId.toString()
-        ) {
+        const isPatient = (req.user.roles && req.user.roles.some(role => role.name === 'patient')) ||
+                         req.user.role === 'patient';
+                         
+        if (isPatient && medicalRecord.patient.toString() === userId.toString()) {
           // If patient, they only have read access
           if (requiredLevel === 'read') {
             return next();
@@ -53,7 +58,7 @@ const medicalRecordAccessMiddleware = {
         }
         
         // Check explicit access grants
-        if (medicalRecord.hasAccess(userId, requiredLevel)) {
+        if (medicalRecord.hasAccess && medicalRecord.hasAccess(userId, requiredLevel)) {
           return next();
         }
         
