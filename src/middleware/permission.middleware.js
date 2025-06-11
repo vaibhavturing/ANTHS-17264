@@ -1,89 +1,91 @@
 // src/middleware/permission.middleware.js
 const logger = require('../utils/logger');
 
+
 /**
  * Permission checking middleware factory
- * Supports both function-style and object-style usage:
- * - Function style: permissionMiddleware('resource:action')
- * - Object style: permissionMiddleware.checkPermission('resource', 'action')
- * 
- * @param {string} permissionString - Permission string in format 'resource:action'
- * @returns {function} Express middleware function
+ * IMPORTANT: This implementation supports both object-style and function-style calls
  */
 function permissionMiddleware(permissionString) {
-  // Extract resource and action from the permission string ('resource:action')
-  const [resource, action] = permissionString.split(':');
-  
-  // Return middleware function
-  return (req, res, next) => {
-    try {
-      // Get user from the request (should be set by auth middleware)
-      const user = req.user;
-      
-      if (!user) {
-        logger.warn('Permission check failed: No authenticated user found');
-        return res.status(401).json({
+  // When called as a function directly
+  if (typeof permissionString === 'string') {
+    // Extract resource and action from the permission string ('resource:action')
+    const [resource, action] = permissionString.split(':');
+    
+    // Return middleware function
+    return (req, res, next) => {
+      try {
+        // Get user from the request (should be set by auth middleware)
+        const user = req.user;
+        
+        if (!user) {
+          logger.warn('Permission check failed: No authenticated user found');
+          return res.status(401).json({
+            success: false,
+            error: {
+              message: 'Authentication required',
+              type: 'UNAUTHORIZED'
+            }
+          });
+        }
+        
+        // Simple role-based check
+        if (user.role === 'admin') {
+          // Admin has all permissions
+          return next();
+        }
+        
+        // Basic role-based permissions
+        const rolePermissions = {
+          doctor: {
+            appointments: ['read', 'create', 'update'],
+            patients: ['read', 'update'],
+            medicalRecords: ['read', 'create', 'update'],
+            communications: ['create', 'read']
+          },
+          nurse: {
+            appointments: ['read', 'create', 'update'],
+            patients: ['read', 'update'],
+            medicalRecords: ['read', 'create', 'update'],
+            communications: ['create', 'read']
+          },
+          patient: {
+            appointments: ['read', 'create'],
+            medicalRecords: ['read'],
+            communications: ['create', 'read']
+          }
+        };
+        
+        const userPermissions = rolePermissions[user.role] || {};
+        const resourcePermissions = userPermissions[resource] || [];
+        
+        if (resourcePermissions.includes(action)) {
+          return next();
+        }
+        
+        logger.warn(`Permission denied: User ${user.id} with role ${user.role} tried to ${action} on ${resource}`);
+        return res.status(403).json({
           success: false,
           error: {
-            message: 'Authentication required',
-            type: 'UNAUTHORIZED'
+            message: 'You do not have permission to perform this action',
+            type: 'FORBIDDEN'
+          }
+        });
+      } catch (error) {
+        logger.error('Permission middleware error', { error: error.message });
+        return res.status(500).json({
+          success: false,
+          error: {
+            message: 'Internal server error during permission check',
+            type: 'INTERNAL_ERROR'
           }
         });
       }
-      
-      // Simple role-based check
-      if (user.role === 'admin') {
-        // Admin has all permissions
-        return next();
-      }
-      
-      // Basic role-based permissions
-      const rolePermissions = {
-        doctor: {
-          appointments: ['read', 'create', 'update'],
-          patients: ['read', 'update'],
-          medicalRecords: ['read', 'create', 'update'],
-          communications: ['create', 'read']
-        },
-        nurse: {
-          appointments: ['read', 'create', 'update'],
-          patients: ['read', 'update'],
-          medicalRecords: ['read', 'create', 'update'],
-          communications: ['create', 'read']
-        },
-        patient: {
-          appointments: ['read', 'create'],
-          medicalRecords: ['read'],
-          communications: ['create', 'read']
-        }
-      };
-      
-      const userPermissions = rolePermissions[user.role] || {};
-      const resourcePermissions = userPermissions[resource] || [];
-      
-      if (resourcePermissions.includes(action)) {
-        return next();
-      }
-      
-      logger.warn(`Permission denied: User ${user.id} with role ${user.role} tried to ${action} on ${resource}`);
-      return res.status(403).json({
-        success: false,
-        error: {
-          message: 'You do not have permission to perform this action',
-          type: 'FORBIDDEN'
-        }
-      });
-    } catch (error) {
-      logger.error('Permission middleware error', { error: error.message });
-      return res.status(500).json({
-        success: false,
-        error: {
-          message: 'Internal server error during permission check',
-          type: 'INTERNAL_ERROR'
-        }
-      });
-    }
-  };
+    };
+  }
+  
+  // When called improperly, throw an error
+  throw new Error('permissionMiddleware must be called with a permission string in format "resource:action"');
 }
 
 /**

@@ -8,6 +8,118 @@ const { StatusCodes } = require("http-status-codes");
  * Authentication middleware
  * Verifies the access token and attaches the user to the request
  */
+
+const authMiddleware = {
+  /**
+   * Authenticate a user based on JWT token
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next function
+   */
+  authenticateUser: (req, res, next) => {
+    try {
+      // Get token from authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        logger.warn('Authentication failed: No token provided');
+        return ResponseUtil.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
+      }
+      
+      const token = authHeader.split(' ')[1];
+      
+      // Verify token
+      // For development/testing purposes, provide a mock user if JWT verification is not set up
+      if (process.env.NODE_ENV === 'development' && process.env.MOCK_AUTH === 'true') {
+        logger.info('Using mock authentication for development');
+        req.user = {
+          id: 'mock-user-id',
+          email: 'mock@example.com',
+          role: req.headers['x-mock-role'] || 'patient', // Allow role override through header
+          patientId: 'mock-patient-id'
+        };
+        return next();
+      }
+      
+      // For production, verify JWT properly
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-default-secret-key');
+        req.user = decoded;
+        
+        // Check if token is expired
+        const currentTime = Math.floor(Date.now() / 1000);
+        if (decoded.exp && decoded.exp < currentTime) {
+          logger.warn('Authentication failed: Token expired');
+          return ResponseUtil.error(res, 'Token expired', 401, 'TOKEN_EXPIRED');
+        }
+        
+        next();
+      } catch (error) {
+        logger.warn('Token verification failed', { error: error.message });
+        return ResponseUtil.error(res, 'Invalid token', 401, 'INVALID_TOKEN');
+      }
+    } catch (error) {
+      logger.error('Authentication middleware error', { error: error.message });
+      return ResponseUtil.error(res, 'Authentication error', 500, 'SERVER_ERROR');
+    }
+  },
+  
+  /**
+   * Check if the authenticated user has admin role
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next function
+   */
+  requireAdmin: (req, res, next) => {
+    try {
+      // User should already be authenticated at this point
+      if (!req.user) {
+        logger.warn('Admin check failed: No authenticated user');
+        return ResponseUtil.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
+      }
+      
+      if (req.user.role !== 'admin') {
+        logger.warn(`Admin access denied for user: ${req.user.id}, role: ${req.user.role}`);
+        return ResponseUtil.error(res, 'Admin access required', 403, 'FORBIDDEN');
+      }
+      
+      next();
+    } catch (error) {
+      logger.error('Admin check middleware error', { error: error.message });
+      return ResponseUtil.error(res, 'Server error during access check', 500, 'SERVER_ERROR');
+    }
+  },
+  
+  /**
+   * Require specific role to access a route
+   * @param {string|string[]} roles - Required role(s) for access
+   * @returns {Function} - Express middleware function
+   */
+  requireRole: (roles) => {
+    return (req, res, next) => {
+      try {
+        // User should already be authenticated
+        if (!req.user) {
+          logger.warn('Role check failed: No authenticated user');
+          return ResponseUtil.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
+        }
+        
+        // Convert single role to array for consistent checking
+        const requiredRoles = Array.isArray(roles) ? roles : [roles];
+        
+        if (!requiredRoles.includes(req.user.role)) {
+          logger.warn(`Role-based access denied for user: ${req.user.id}, has role: ${req.user.role}, needs one of: ${requiredRoles.join(', ')}`);
+          return ResponseUtil.error(res, 'You do not have the required role to access this resource', 403, 'FORBIDDEN');
+        }
+        
+        next();
+      } catch (error) {
+        logger.error('Role check middleware error', { error: error.message });
+        return ResponseUtil.error(res, 'Server error during role check', 500, 'SERVER_ERROR');
+      }
+    };
+  }
+};
+
 const protect = async (req, res, next) => {
   try {
     const token = extractTokenFromRequest(req);

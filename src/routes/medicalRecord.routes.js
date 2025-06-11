@@ -12,6 +12,8 @@ const permissionMiddleware = require('../middleware/permission.middleware');
 
 const router = express.Router();
 
+
+
 /**
  * @route GET /api/medical-records/patient/:patientId
  * @desc Get medical records for a patient
