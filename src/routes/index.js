@@ -27,6 +27,8 @@ const medicalRecordNotificationRoutes = require('./medical-record-notification.r
 const notificationRoutes = require('./notification.routes');
 const insuranceRoutes = require('./insurance.routes'); // Added new insurance routes
 const billingRoutes = require('./billing.routes');     // Added new billing routes
+const analyticsRoutes = require('./analytics.routes'); // Added new analytics routes
+
 
 const router = express.Router();
 
@@ -67,6 +69,8 @@ const mountRoutes = () => {
   router.use('/notifications', notificationRoutes);
   router.use('/insurance', insuranceRoutes); // Added new insurance routes
   router.use('/billing', billingRoutes);     // Added new billing routes
+  router.use('/analytics', analyticsRoutes); // Added new analytics routes
+
 
   // All routes below this point require authentication
   
