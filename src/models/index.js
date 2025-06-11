@@ -15,7 +15,9 @@ const ActivityLog = require('./activity-log.model');
 const patientProfileVersion = require('./patientProfileVersion.model');
 const communication = require('./communication.model');
 const notification = require('./notification.model');
-
+const coommunication = require('./communication.model');
+const billing = require('./billing.model');
+const insurance = require('./insurance.model');
 /**
  * CHANGES:
  * - Added VerificationToken to the exports
@@ -32,8 +34,10 @@ module.exports = {
   RefreshToken,
   notification,
   Role,
-  coommunication,
+  communication,
   ActivityLog,
   patientProfileVersion,
-  VerificationToken
+  VerificationToken,
+  billing,
+  insurance
 };
