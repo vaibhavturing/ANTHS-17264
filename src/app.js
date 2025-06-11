@@ -24,6 +24,8 @@ const prescriptionNotificationRoutes = require('./routes/prescription-notificati
 const medicalRecordNotificationRoutes = require('./routes/medical-record-notification.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const scheduledTasksService = require('./services/scheduled-tasks.service');
+const insuranceRoutes = require('./routes/insurance.routes'); // Added new insurance routes
+const billingRoutes = require('./routes/billing.routes');     // Added new billing routes
 
 
 
@@ -90,6 +92,8 @@ app.use('/api/appointments', appointmentNotificationRoutes);
 app.use('/api/prescriptions', prescriptionNotificationRoutes);
 app.use('/api/medical-records', medicalRecordNotificationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/insurance', insuranceRoutes); // Added new insurance routes
+app.use('/api/billing', billingRoutes);     // Added new billing routes
 
 
 // Parse request bodies
