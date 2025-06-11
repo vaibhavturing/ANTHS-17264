@@ -4,15 +4,7 @@ const express = require('express');
 const router = express.Router();
 const communicationController = require('../controllers/communication.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-
-// Permission middleware with fallback for easier testing
-let permissionMiddleware;
-try {
-  permissionMiddleware = require('../middleware/permission.middleware').permissionMiddleware;
-} catch (error) {
-  // Fallback if the permission middleware doesn't exist
-  permissionMiddleware = (permission) => (req, res, next) => next();
-}
+const permissionMiddleware = require('../middleware/permission.middleware');
 
 // Middleware to restrict access to authenticated users
 const requireAuth = authMiddleware.authenticate;
@@ -21,7 +13,7 @@ const requireAuth = authMiddleware.authenticate;
 router.post(
   '/',
   requireAuth,
-  permissionMiddleware('communications:create'),
+  permissionMiddleware.checkPermission('communications', 'create'),
   communicationController.createCommunication
 );
 

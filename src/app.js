@@ -26,6 +26,8 @@ const notificationRoutes = require('./routes/notification.routes');
 const scheduledTasksService = require('./services/scheduled-tasks.service');
 
 
+
+
 // Import required route modules - with error handling for modules that might not exist yet
 const loadRouteModule = (path) => {
   try {
@@ -36,9 +38,22 @@ const loadRouteModule = (path) => {
   }
 };
 
+// Function to safely import route modules
+const safeRequire = (modulePath) => {
+  try {
+    return require(modulePath);
+  } catch (error) {
+    logger.warn(`Could not load route module ${modulePath}: ${error.message}`);
+    // Return an empty router to prevent application crashes
+    return express.Router();
+  }
+};
+
+
 // Load route modules
 const medicalRecordRoutes = loadRouteModule('./routes/medicalRecord.routes');
 const patientMedicalRecordRoutes = loadRouteModule('./routes/patient-medical-records.routes');
+
 
 
 const {

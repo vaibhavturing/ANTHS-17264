@@ -32,4 +32,5 @@ router.post('/:patientId/self-schedule',
   appointmentController.createAppointment
 );
 
+
 module.exports = router;

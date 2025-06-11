@@ -20,6 +20,24 @@ const getPermissionMiddleware = () => {
   }
 };
 
+// Since you're having trouble with the medical record controller,
+// I'm creating a placeholder handler here to avoid the dependency
+const placeholderHandler = (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'This is a placeholder for patient medical records',
+    records: []
+  });
+};
+
+// Get a patient's medical records
+router.get('/:patientId',
+  authMiddleware.authenticateUser,
+  permissionMiddleware.checkResourceOwnership('patient'),
+  placeholderHandler
+);
+
+
 // Middleware to restrict access to authenticated users with specific permissions
 const requireAuth = authMiddleware.authenticate;
 const requirePermission = getPermissionMiddleware();

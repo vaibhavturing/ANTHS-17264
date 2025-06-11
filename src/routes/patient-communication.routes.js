@@ -4,15 +4,7 @@ const express = require('express');
 const router = express.Router();
 const communicationController = require('../controllers/communication.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-
-// Permission middleware with fallback for easier testing
-let permissionMiddleware;
-try {
-  permissionMiddleware = require('../middleware/permission.middleware').permissionMiddleware;
-} catch (error) {
-  // Fallback if the permission middleware doesn't exist
-  permissionMiddleware = (permission) => (req, res, next) => next();
-}
+const permissionMiddleware = require('../middleware/permission.middleware');
 
 // Patient access middleware with fallback
 let patientAccessMiddleware;
@@ -56,7 +48,7 @@ router.get(
 router.post(
   '/:patientId/health-tip',
   requireAuth,
-  permissionMiddleware('communications:send-health-tip'),
+  permissionMiddleware.checkPermission('communications', 'send-health-tip'),
   communicationController.sendHealthTip
 );
 
@@ -64,7 +56,7 @@ router.post(
 router.post(
   '/:patientId/emergency-notification',
   requireAuth,
-  permissionMiddleware('communications:send-emergency'),
+  permissionMiddleware.checkPermission('communications', 'send-emergency'),
   communicationController.sendEmergencyNotification
 );
 

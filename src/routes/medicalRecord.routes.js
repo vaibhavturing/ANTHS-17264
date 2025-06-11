@@ -8,6 +8,7 @@ const medicalRecordController = require('../controllers/medical-record.controlle
 const auth = require('../middleware/auth.middleware');
 const validate = require('../middleware/validate.middleware');
 const medicalRecordValidator = require('../validators/medicalRecord.validator');
+const permissionMiddleware = require('../middleware/permission.middleware');
 
 const router = express.Router();
 
@@ -33,6 +34,8 @@ router.get(
   auth.requirePatientSelfOrProvider('id'),
   medicalRecordController.getMedicalRecordById
 );
+
+
 
 /**
  * @route POST /api/medical-records

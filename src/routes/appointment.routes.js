@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const validate = require('../middleware/validate.middleware');
 const { auth } = require('../middleware/auth.middleware');
+const permissionMiddleware = require('../middleware/permission.middleware');
 
 const appointmentController = require('../controllers/appointment.controller');
 const {
@@ -23,6 +24,8 @@ router.get(
   validate(getAppointmentsSchema),
   appointmentController.getAppointments
 );
+
+
 
 // GET appointment by ID
 router.get(
