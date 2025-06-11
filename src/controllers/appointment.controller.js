@@ -12,6 +12,8 @@ const Patient = require('../models/patient.model');
 const { NotFoundError } = require('../utils/errors/NotFoundError');
 const { BusinessLogicError } = require('../utils/errors/BusinessLogicError');
 const auditLogger = require('../utils/audit-logger');
+const appointmentService = require('../services/appointment.service');
+
 
 /**
  * Get appointments with pagination and filtering

@@ -1,324 +1,191 @@
-/**
- * Healthcare Management Application
- * Appointment Model
- * 
- * Schema for patient appointments including scheduling info, status tracking, 
- * and visit details
- */
-
+// src/models/appointment.model.js
 const mongoose = require('mongoose');
-const { createSchema } = require('./baseSchema');
+const baseSchema = require('./baseSchema');
 
-/**
- * Valid appointment status values
- */
-const APPOINTMENT_STATUS = {
-  SCHEDULED: 'scheduled',
-  CONFIRMED: 'confirmed',
-  CHECKED_IN: 'checked_in',
-  IN_PROGRESS: 'in_progress',
-  COMPLETED: 'completed',
-  MISSED: 'missed',
-  CANCELLED: 'cancelled',
-  RESCHEDULED: 'rescheduled'
-};
-
-/**
- * Valid appointment types
- */
-const APPOINTMENT_TYPES = {
-  NEW_PATIENT: 'new_patient',
-  FOLLOW_UP: 'follow_up',
-  CONSULTATION: 'consultation',
-  ANNUAL_PHYSICAL: 'annual_physical',
-  PROCEDURE: 'procedure',
-  VACCINATION: 'vaccination',
-  URGENT_CARE: 'urgent_care',
-  TELEMEDICINE: 'telemedicine',
-  LAB_WORK: 'lab_work',
-  IMAGING: 'imaging'
-};
-
-/**
- * Appointment schema definition
- */
-const appointmentSchema = createSchema({
-  // Patient information
+const appointmentSchema = new mongoose.Schema({
   patient: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Patient',
-    required: [true, 'Patient is required']
+    required: true
   },
-  
-  // Provider information (doctor, nurse, etc.)
-  provider: {
+  doctor: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Doctor',
-    required: [true, 'Provider is required']
+    required: true
   },
-  
-  // Scheduling information
-  scheduledDateTime: {
+  startTime: {
     type: Date,
-    required: [true, 'Appointment date and time is required'],
-    validate: {
-      validator: function(date) {
-        return date > new Date();
-      },
-      message: 'Appointment date must be in the future'
-    }
+    required: true
   },
-  
-  endDateTime: {
+  endTime: {
     type: Date,
-    validate: {
-      validator: function(date) {
-        return date > this.scheduledDateTime;
-      },
-      message: 'End time must be after start time'
-    }
+    required: true
   },
-  
-  // Duration in minutes (computed or explicit)
-  duration: {
-    type: Number,
-    min: [5, 'Appointment must be at least 5 minutes long'],
-    default: 30
-  },
-  
-  // Appointment type and details
-  type: {
-    type: String,
-    required: [true, 'Appointment type is required'],
-    enum: {
-      values: Object.values(APPOINTMENT_TYPES),
-      message: 'Invalid appointment type'
-    }
-  },
-  
   status: {
     type: String,
-    enum: Object.values(APPOINTMENT_STATUS),
-    default: APPOINTMENT_STATUS.SCHEDULED
+    enum: ['scheduled', 'checked_in', 'in_progress', 'completed', 'cancelled', 'no_show'],
+    default: 'scheduled'
   },
-  
-  // Why the patient is coming in
-  purpose: {
+  type: {
     type: String,
-    required: [true, 'Appointment purpose is required']
+    enum: ['new_patient', 'follow_up', 'specialist', 'urgent', 'routine'],
+    required: true
   },
-  
+  reason: {
+    type: String,
+    required: true
+  },
   notes: {
-    type: String,
-    maxlength: [1000, 'Notes cannot exceed 1000 characters']
+    type: String
   },
-  
-  // Indicates if this is a recurring appointment
-  isRecurring: {
+  checkinTime: {
+    type: Date
+  },
+  completionTime: {
+    type: Date
+  },
+  cancellationReason: {
+    type: String
+  },
+  cancellationTime: {
+    type: Date
+  },
+  cancelledBy: {
+    type: String,
+    enum: ['patient', 'doctor', 'staff']
+  },
+  notifyPatient: {
+    type: Boolean,
+    default: true
+  },
+  followUpRecommendation: {
+    recommended: {
+      type: Boolean,
+      default: false
+    },
+    timeframe: {
+      type: String,
+      enum: ['1_week', '2_weeks', '1_month', '3_months', '6_months', '1_year']
+    }
+  },
+  remindersSent: [{
+    type: {
+      type: String,
+      enum: ['email', 'sms', 'push']
+    },
+    sentAt: Date,
+    status: {
+      type: String,
+      enum: ['sent', 'delivered', 'failed']
+    }
+  }],
+  // For self-scheduling
+  selfScheduled: {
     type: Boolean,
     default: false
   },
-  
-  // For recurring appointments
-  recurringPattern: {
-    frequency: {
+  // Tracking changes
+  history: [{
+    action: {
       type: String,
-      enum: ['daily', 'weekly', 'biweekly', 'monthly']
+      enum: ['created', 'rescheduled', 'cancelled', 'checked_in', 'completed', 'no_show']
     },
-    endDate: Date,
-    daysOfWeek: [Number], // 0 = Sunday, 1 = Monday, etc.
-    occurrences: Number
-  },
-  
-  // Parent appointment if part of a series
-  recurringParent: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Appointment'
-  },
-
-  // Facility/Location information
-  location: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Facility',
-    required: [true, 'Appointment location is required']
-  },
-  
-  room: String,
-
-  // Check-in information
-  checkInTime: Date,
-  
-  // Billing information
-  billing: {
-    insuranceVerified: {
-      type: Boolean,
-      default: false
+    timestamp: {
+      type: Date,
+      default: Date.now
     },
-    copayAmount: Number,
-    copayCollected: {
-      type: Boolean,
-      default: false
-    },
-    estimatedCost: Number,
-    billingStatus: {
+    performedBy: {
       type: String,
-      enum: ['pending', 'billed', 'paid', 'adjusted', 'denied', 'write-off']
-    }
-  },
-  
-  // Reminders
-  reminders: [{
-    sentAt: Date,
-    method: {
-      type: String,
-      enum: ['email', 'sms', 'phone']
+      enum: ['patient', 'doctor', 'staff', 'system']
     },
-    successful: Boolean
-  }],
-  
-  // Cancellation details
-  cancellation: {
-    cancelledAt: Date,
-    cancelledBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
+    previousValues: {
+      startTime: Date,
+      endTime: Date,
+      doctor: mongoose.Schema.Types.ObjectId,
+      status: String
     },
-    reason: String,
-    rescheduleStatus: {
-      type: String,
-      enum: ['not_requested', 'requested', 'rescheduled']
-    }
-  }
-});
+    notes: String
+  }]
+}, baseSchema.baseOptions);
 
-// Indexes for performance
-appointmentSchema.index({ patient: 1, scheduledDateTime: 1 });
-appointmentSchema.index({ provider: 1, scheduledDateTime: 1 });
-appointmentSchema.index({ scheduledDateTime: 1 });
-appointmentSchema.index({ status: 1 });
-appointmentSchema.index({ type: 1 });
-appointmentSchema.index({ location: 1 });
+// Indexes for efficient querying
+appointmentSchema.index({ patient: 1, startTime: -1 });
+appointmentSchema.index({ doctor: 1, startTime: -1 });
+appointmentSchema.index({ status: 1, startTime: 1 });
+appointmentSchema.index({ startTime: 1, endTime: 1 });
 
-// Virtual field for appointment status check
-appointmentSchema.virtual('isUpcoming').get(function() {
-  return (
-    this.scheduledDateTime > new Date() && 
-    this.status !== APPOINTMENT_STATUS.CANCELLED && 
-    this.status !== APPOINTMENT_STATUS.RESCHEDULED
-  );
-});
-
-// Pre-save validation
+// Pre-save hook to add history entry
 appointmentSchema.pre('save', function(next) {
-  // Set end time if not provided
-  if (!this.endDateTime && this.scheduledDateTime && this.duration) {
-    this.endDateTime = new Date(this.scheduledDateTime.getTime() + this.duration * 60000);
+  // Skip for new appointments
+  if (this.isNew) {
+    this.history.push({
+      action: 'created',
+      performedBy: this.selfScheduled ? 'patient' : 'staff',
+    });
+    return next();
+  }
+  
+  // For existing appointments
+  if (this.isModified('status') || 
+      this.isModified('startTime') || 
+      this.isModified('endTime') ||
+      this.isModified('doctor')) {
+    
+    let action = 'rescheduled';
+    if (this.isModified('status')) {
+      if (this.status === 'cancelled') action = 'cancelled';
+      else if (this.status === 'checked_in') action = 'checked_in';
+      else if (this.status === 'completed') action = 'completed';
+      else if (this.status === 'no_show') action = 'no_show';
+    }
+    
+    const previousValues = {};
+    if (this._previousModifiedPaths.includes('startTime')) previousValues.startTime = this._oldModifiedPaths.startTime;
+    if (this._previousModifiedPaths.includes('endTime')) previousValues.endTime = this._oldModifiedPaths.endTime;
+    if (this._previousModifiedPaths.includes('doctor')) previousValues.doctor = this._oldModifiedPaths.doctor;
+    if (this._previousModifiedPaths.includes('status')) previousValues.status = this._oldModifiedPaths.status;
+    
+    this.history.push({
+      action,
+      // Ideally, this would be derived from the user making the change
+      performedBy: 'staff',
+      previousValues
+    });
   }
   
   next();
 });
 
-// Pre-find hooks to populate references
-appointmentSchema.pre(/^find/, function(next) {
-  // Populate related models
-  this.populate({
-    path: 'patient',
-    select: 'mrn userId'
-  })
-  .populate({
-    path: 'provider',
-    select: 'userId specialty'
-  })
-  .populate({
-    path: 'location',
-    select: 'name address'
-  });
+// Method to check for conflicts with doctor's schedule
+appointmentSchema.statics.checkDoctorAvailability = async function(doctorId, startTime, endTime, excludeAppointmentId = null) {
+  const query = {
+    doctor: doctorId,
+    status: 'scheduled',
+    $or: [
+      { // New appointment starts during an existing appointment
+        startTime: { $lte: startTime },
+        endTime: { $gt: startTime }
+      },
+      { // New appointment ends during an existing appointment
+        startTime: { $lt: endTime },
+        endTime: { $gte: endTime }
+      },
+      { // New appointment encompasses an existing appointment
+        startTime: { $gte: startTime },
+        endTime: { $lte: endTime }
+      }
+    ]
+  };
   
-  next();
-});
-
-// Methods
-/**
- * Check in a patient for their appointment
- * @returns {Promise} Updated appointment document
- */
-appointmentSchema.methods.checkIn = async function() {
-  this.status = APPOINTMENT_STATUS.CHECKED_IN;
-  this.checkInTime = new Date();
-  return await this.save();
-};
-
-/**
- * Start an appointment
- * @returns {Promise} Updated appointment document
- */
-appointmentSchema.methods.startAppointment = async function() {
-  this.status = APPOINTMENT_STATUS.IN_PROGRESS;
-  return await this.save();
-};
-
-/**
- * Complete an appointment
- * @param {string} notes - Optional notes from the appointment
- * @returns {Promise} Updated appointment document
- */
-appointmentSchema.methods.completeAppointment = async function(notes) {
-  this.status = APPOINTMENT_STATUS.COMPLETED;
-  if (notes) {
-    this.notes = notes;
+  // Exclude the current appointment if we're checking for reschedule conflicts
+  if (excludeAppointmentId) {
+    query._id = { $ne: excludeAppointmentId };
   }
-  return await this.save();
+  
+  const conflictingAppointments = await this.find(query).exec();
+  return conflictingAppointments.length === 0;
 };
 
-/**
- * Cancel an appointment
- * @param {ObjectId} userId - ID of user cancelling the appointment
- * @param {string} reason - Reason for cancellation
- * @returns {Promise} Updated appointment document
- */
-appointmentSchema.methods.cancelAppointment = async function(userId, reason) {
-  this.status = APPOINTMENT_STATUS.CANCELLED;
-  this.cancellation = {
-    cancelledAt: new Date(),
-    cancelledBy: userId,
-    reason: reason,
-    rescheduleStatus: 'not_requested'
-  };
-  return await this.save();
-};
-
-/**
- * Reschedule an appointment
- * @param {Date} newDateTime - New appointment date and time
- * @param {ObjectId} userId - ID of user rescheduling the appointment
- * @param {string} reason - Reason for rescheduling
- * @returns {Promise} Updated appointment document
- */
-appointmentSchema.methods.rescheduleAppointment = async function(newDateTime, userId, reason) {
-  // Store original date for record keeping
-  const originalDate = this.scheduledDateTime;
-  
-  // Update with new date
-  this.scheduledDateTime = newDateTime;
-  this.endDateTime = new Date(newDateTime.getTime() + this.duration * 60000);
-  this.status = APPOINTMENT_STATUS.RESCHEDULED;
-  
-  // Record the change
-  this.cancellation = {
-    cancelledAt: new Date(),
-    cancelledBy: userId,
-    reason: reason || 'Rescheduled',
-    rescheduleStatus: 'rescheduled'
-  };
-  
-  return await this.save();
-};
-
-// Create the model
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 
-module.exports = {
-  Appointment,
-  APPOINTMENT_STATUS,
-  APPOINTMENT_TYPES
-};
+module.exports = Appointment;
