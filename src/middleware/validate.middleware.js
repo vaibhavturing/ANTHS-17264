@@ -1,85 +1,38 @@
-// src/middleware/validate.middleware.js
+// File: src/middleware/validate.middleware.js (Make sure this exists and works correctly)
+const { validationResult } = require('express-validator');
+const { ResponseUtil } = require('../utils/response.util');
 
 /**
- * Middleware for request validation using Joi schemas
- * @param {Object} schema - Joi validation schema
- * @returns {Function} Express middleware function
+ * Middleware to validate request data using express-validator
+ * @param {Array} validations - Array of validation middlewares
+ * @returns {Function} Express middleware
  */
-const logger = require('../utils/logger');
-
-/**
- * Middleware for request validation using Joi schemas
- * @param {Object} schema - Joi validation schema
- * @param {string} source - Request property to validate ('body', 'query', 'params')
- * @returns {Function} Express middleware function
- */
-const validate = (schema, source = 'body') => {
-  return (req, res, next) => {
-    try {
-      // CHANGE: Add support for validating query parameters and route parameters
-      let dataToValidate;
-      switch (source) {
-        case 'query':
-          dataToValidate = req.query;
-          break;
-        case 'params':
-          dataToValidate = req.params;
-          break;
-        case 'body':
-        default:
-          dataToValidate = req.body;
-      }
-      
-      const { error, value } = schema.validate(dataToValidate, {
-        abortEarly: false, // Return all errors, not just the first one
-        stripUnknown: true, // Remove unknown keys from the validated data
-        errors: { 
-          wrap: { 
-            label: '' // Don't wrap field names in quotes
-          } 
-        }
+const validateMiddleware = (validations) => {
+  return async (req, res, next) => {
+    // Execute all validations
+    await Promise.all(validations.map(validation => validation.run(req)));
+    
+    // Check for validation errors
+    const errors = validationResult(req);
+    
+    if (!errors.isEmpty()) {
+      // Format errors for response
+      const formattedErrors = {};
+      errors.array().forEach(error => {
+        formattedErrors[error.param] = error.msg;
       });
       
-      if (error) {
-        const errorDetails = error.details.map(detail => ({
-          field: detail.path.join('.'),
-          message: detail.message
-        }));
-        
-        logger.debug('Validation error', { 
-          path: req.path, 
-          errors: errorDetails 
-        });
-        
-        return res.status(400).json({
-          success: false,
-          error: {
-            message: 'Validation failed',
-            type: 'VALIDATION_ERROR',
-            details: errorDetails
-          }
-        });
-      }
-      
-      // Update the validated data in the request
-      switch (source) {
-        case 'query':
-          req.query = value;
-          break;
-        case 'params':
-          req.params = value;
-          break;
-        case 'body':
-        default:
-          req.body = value;
-      }
-      
-      next();
-    } catch (error) {
-      logger.error('Validation middleware error', { error: error.message });
-      next(error);
+      return ResponseUtil.error(
+        res, 
+        'Validation failed', 
+        400, 
+        'VALIDATION_ERROR', 
+        { errors: formattedErrors }
+      );
     }
+    
+    next();
   };
 };
 
-module.exports = validate;
+module.exports = validateMiddleware;
