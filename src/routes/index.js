@@ -19,8 +19,6 @@ const adminRoutes = require('./admin.routes');
 const healthRoutes = require('./health.routes');
 const profileRoutes = require('./profile.routes');
 
-
-
 const communicationRoutes = require('./communication.routes');
 const patientCommunicationRoutes = require('./patient-communication.routes');
 const appointmentNotificationRoutes = require('./appointment-notification.routes');
@@ -30,8 +28,6 @@ const notificationRoutes = require('./notification.routes');
 const insuranceRoutes = require('./insurance.routes'); // Added new insurance routes
 const billingRoutes = require('./billing.routes');     // Added new billing routes
 const analyticsRoutes = require('./analytics.routes'); // Added new analytics routes
-
-
 
 
 const router = express.Router();
