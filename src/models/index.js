@@ -18,6 +18,10 @@ const notification = require('./notification.model');
 const coommunication = require('./communication.model');
 const billing = require('./billing.model');
 const insurance = require('./insurance.model');
+const analytics = require('./analytics.model');
+const appointmentType = require('./appointmentType.model');
+const schedule = require('./schedule.model');
+const availability = require('./availability.model');
 /**
  * CHANGES:
  * - Added VerificationToken to the exports
@@ -39,5 +43,9 @@ module.exports = {
   patientProfileVersion,
   VerificationToken,
   billing,
-  insurance
+  insurance,
+  analytics,
+  appointmentType,
+  schedule,
+  availability
 };
