@@ -1,6 +1,4 @@
-// src/middleware/permission.middleware.js
 const logger = require('../utils/logger');
-
 
 /**
  * Permission checking middleware factory
@@ -165,6 +163,38 @@ permissionMiddleware.checkResourceOwnership = (resourceType) => {
         }
       });
     }
+  };
+};
+
+/**
+ * Restrict access to users with a specific role
+ * @param {string} role - The required user role (e.g., 'admin')
+ * @returns {function} - Express middleware function
+ */
+permissionMiddleware.restrictTo = (role) => {
+  return (req, res, next) => {
+    const user = req.user;
+    if (!user) {
+      logger.warn('Role restriction failed: No authenticated user found');
+      return res.status(401).json({
+        success: false,
+        error: {
+          message: 'Authentication required',
+          type: 'UNAUTHORIZED'
+        }
+      });
+    }
+    if (user.role !== role) {
+      logger.warn(`Role restriction failed: User ${user.id} with role ${user.role} tried to access ${role}-only route`);
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'You do not have permission to perform this action',
+          type: 'FORBIDDEN'
+        }
+      });
+    }
+    next();
   };
 };
 
