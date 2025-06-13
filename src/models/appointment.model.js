@@ -135,6 +135,48 @@ const appointmentSchema = new mongoose.Schema({
   originalAppointment: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Appointment'
+  },
+  
+  // NEW FIELDS: Added for emergency schedule management
+  // Reference to an appointment this was rescheduled to (if this one was cancelled)
+  rescheduledToAppointment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment'
+  },
+  
+  // Who rescheduled this appointment
+  rescheduledBy: {
+    type: String,
+    enum: ['patient', 'doctor', 'admin', null],
+    default: null
+  },
+  
+  // ID of user who performed the rescheduling
+  rescheduledByUserId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  
+  // When was the appointment rescheduled
+  rescheduledAt: {
+    type: Date
+  },
+  
+  // Reference to emergency leave that caused this appointment to be cancelled/rescheduled
+  emergencyLeaveId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Leave'
+  },
+  
+  // Was patient notified about emergency changes
+  emergencyNotificationSent: {
+    type: Boolean,
+    default: false
+  },
+  
+  // When was the emergency notification sent
+  emergencyNotificationSentAt: {
+    type: Date
   }
 }, baseSchema.baseOptions);
 
@@ -155,6 +197,17 @@ appointmentSchema.pre('save', function(next) {
     const durationMs = this.duration * 60 * 1000; // Convert minutes to milliseconds
     this.endTime = new Date(startMs + durationMs);
   }
+  
+  // NEW: Add timestamp when appointment is rescheduled
+  if (this.isModified('rescheduledBy') && this.rescheduledBy) {
+    this.rescheduledAt = new Date();
+  }
+  
+  // NEW: Add timestamp when emergency notification is sent
+  if (this.isModified('emergencyNotificationSent') && this.emergencyNotificationSent) {
+    this.emergencyNotificationSentAt = new Date();
+  }
+  
   next();
 });
 
@@ -197,6 +250,28 @@ appointmentSchema.statics.isTimeSlotAvailable = async function(doctorId, startTi
       startTime,
       endTime,
       excludeAppointmentId
+    });
+    throw error;
+  }
+};
+
+// NEW: Static method to find appointments affected by emergency leave
+appointmentSchema.statics.findAffectedByEmergency = async function(doctorId, startDate, endDate) {
+  try {
+    return await this.find({
+      doctor: doctorId,
+      status: { $nin: ['cancelled', 'completed', 'no-show'] },
+      startTime: { $gte: startDate },
+      endTime: { $lte: endDate }
+    }).populate('patient', 'firstName lastName email phone')
+      .populate('appointmentType', 'name duration bufferTime')
+      .sort({ startTime: 1 });
+  } catch (error) {
+    logger.error('Error finding appointments affected by emergency', { 
+      error: error.message,
+      doctorId,
+      startDate,
+      endDate
     });
     throw error;
   }

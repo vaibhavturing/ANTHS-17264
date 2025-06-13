@@ -212,26 +212,46 @@ const emailService = {
     }
   },
 
-  /**
+   /**
    * Send a staff notification email
    * @param {string} type - Notification type
    * @param {string} subject - Email subject
    * @param {Object} data - Notification data
    * @returns {Promise<Object>} Result of the email operation
-   *
-   * NEW METHOD: Added for staff notifications about doctor leaves
    */
   sendStaffNotificationEmail: async (type, subject, data) => {
     try {
-      // In a real implementation, this would use an email service
-      // For now, we'll log the email content
-
       logger.info(`MOCK EMAIL: Staff Notification - ${subject}`);
       logger.info(`MOCK EMAIL: Type: ${type}`);
       logger.info(`MOCK EMAIL: Data: ${JSON.stringify(data)}`);
 
+      // NEW: Handle emergency notification emails to staff
+      let mockEmailContent = '';
+
+      if (type === 'doctor_emergency_unavailable') {
+        const doctorName = data.data.doctorName;
+        const startDate = new Date(data.data.startDate).toLocaleDateString();
+        const endDate = new Date(data.data.endDate).toLocaleDateString();
+        const count = data.data.affectedAppointmentsCount;
+        const reason = data.data.reason;
+
+        mockEmailContent = `
+EMERGENCY ALERT: Doctor Unavailable
+
+Doctor ${doctorName} is unavailable from ${startDate} to ${endDate} due to ${reason}.
+There are ${count} appointment(s) affected that need immediate attention.
+
+Affected appointments:
+${data.data.affectedAppointments.map(apt =>
+  `- ${apt.patientName} (${apt.appointmentType}) on ${new Date(apt.startTime).toLocaleString()}`
+).join('\n')}
+
+URGENT: Please log in to the admin portal immediately to manage these appointments.
+`;
+        logger.info(`MOCK EMAIL CONTENT:\n${mockEmailContent}`);
+      }
+
       if (config.NODE_ENV === 'production') {
-        // Example integration with an email provider (pseudocode)
         // const emailProvider = require('../config/emailProvider');
         // const emailTemplate = getEmailTemplateForType(type, data);
         // return await emailProvider.send({
@@ -243,16 +263,15 @@ const emailService = {
         // });
       }
 
-      // Return success for development/testing
       return {
         success: true,
-        message: 'Staff notification email sent successfully',
+        message: `Staff notification email sent successfully`,
       };
     } catch (error) {
       logger.error('Failed to send staff notification email', {
         error: error.message,
         type,
-        subject
+        subject,
       });
       throw new Error('Failed to send staff notification email');
     }
@@ -265,20 +284,99 @@ const emailService = {
    * @param {string} subject - Email subject
    * @param {Object} data - Notification data
    * @returns {Promise<Object>} Result of the email operation
-   *
-   * NEW METHOD: Added for patient notifications about appointment changes
    */
   sendPatientNotificationEmail: async (to, type, subject, data) => {
     try {
-      // In a real implementation, this would use an email service
-      // For now, we'll log the email content
-
       logger.info(`MOCK EMAIL: Patient Notification to ${to} - ${subject}`);
       logger.info(`MOCK EMAIL: Type: ${type}`);
       logger.info(`MOCK EMAIL: Data: ${JSON.stringify(data)}`);
 
+      let mockEmailContent = '';
+
+      if (type === 'appointment_emergency_cancellation') {
+        const appointmentDate = new Date(data.appointment.startTime).toLocaleDateString();
+        const appointmentTime = new Date(data.appointment.startTime).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        mockEmailContent = `
+Dear ${data.patient?.firstName || 'Patient'},
+
+IMPORTANT NOTICE: Your appointment scheduled for ${appointmentDate} at ${appointmentTime} has been CANCELLED due to an emergency situation.
+
+Reason: ${data.reason || 'Doctor unavailability (emergency)'}
+
+We sincerely apologize for any inconvenience this may cause.
+`;
+
+        if (data.alternatives && data.alternatives.length > 0) {
+          mockEmailContent += `
+We have identified the following alternative appointment slots:
+
+${data.alternatives.map((slot, index) =>
+  `Option ${index + 1}: ${new Date(slot.startTime).toLocaleDateString()} at ${new Date(slot.startTime).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`
+).join('\n')}
+
+Please call our office as soon as possible to reschedule your appointment, or reply to this email with your preferred option number.
+`;
+        } else {
+          mockEmailContent += `
+Please contact our office at your earliest convenience to reschedule your appointment.
+`;
+        }
+
+        mockEmailContent += `
+Thank you for your understanding.
+
+Healthcare Management Team
+`;
+
+        logger.info(`MOCK EMAIL CONTENT:\n${mockEmailContent}`);
+      } else if (type === 'appointment_emergency_rescheduled') {
+        const originalDate = new Date(data.originalAppointment.startTime).toLocaleDateString();
+        const originalTime = new Date(data.originalAppointment.startTime).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        const newDate = new Date(data.newAppointment.startTime).toLocaleDateString();
+        const newTime = new Date(data.newAppointment.startTime).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        mockEmailContent = `
+Dear ${data.patient?.firstName || 'Patient'},
+
+IMPORTANT NOTICE: Your appointment has been rescheduled due to an emergency situation.
+
+Your original appointment:
+Date: ${originalDate}
+Time: ${originalTime}
+Provider: ${data.originalDoctor.name}
+
+Your new appointment:
+Date: ${newDate}
+Time: ${newTime}
+Provider: ${data.newDoctor.name}
+
+This change has been made automatically to ensure you receive care as quickly as possible.
+
+If this new appointment time does not work for you, please contact our office as soon as possible to discuss alternatives.
+
+We sincerely apologize for any inconvenience this may cause and appreciate your understanding.
+
+Healthcare Management Team
+`;
+
+        logger.info(`MOCK EMAIL CONTENT:\n${mockEmailContent}`);
+      }
+
       if (config.NODE_ENV === 'production') {
-        // Example integration with an email provider (pseudocode)
         // const emailProvider = require('../config/emailProvider');
         // const emailTemplate = getEmailTemplateForType(type, data);
         // return await emailProvider.send({
@@ -290,7 +388,6 @@ const emailService = {
         // });
       }
 
-      // Return success for development/testing
       return {
         success: true,
         message: `Patient notification email sent successfully to ${to}`,
@@ -300,9 +397,60 @@ const emailService = {
         error: error.message,
         email: to,
         type,
-        subject
+        subject,
       });
       throw new Error('Failed to send patient notification email');
+    }
+  },
+
+  /**
+   * Send appointment reminder email to patient
+   * @param {Object} appointment - Appointment object with populated patient and doctor
+   * @returns {Promise<Object>} Result of the email operation
+   */
+  sendAppointmentReminderEmail: async (appointment) => {
+    try {
+      if (!appointment.patient || !appointment.patient.email) {
+        throw new Error('Patient data missing from appointment');
+      }
+
+      const to = appointment.patient.email;
+      const subject = 'Upcoming Appointment Reminder';
+
+      logger.info(`MOCK EMAIL: Appointment Reminder to ${to} - ${subject}`);
+      logger.info(`MOCK EMAIL: Appointment Details: ${JSON.stringify({
+        appointmentId: appointment._id,
+        patientId: appointment.patient._id,
+        doctorId: appointment.doctor._id,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+      })}`);
+
+      if (config.NODE_ENV === 'production') {
+        // const emailProvider = require('../config/emailProvider');
+        // return await emailProvider.send({
+        //   to,
+        //   from: config.EMAIL_FROM,
+        //   subject,
+        //   text: `Dear ${appointment.patient.firstName},\n\nThis is a reminder of your upcoming appointment with Dr. ${appointment.doctor.user.lastName} on ${new Date(appointment.startTime).toLocaleString()}.\n\nPlease arrive 15 minutes before your scheduled appointment time.`,
+        //   html: `
+        //     <p>Dear ${appointment.patient.firstName},</p>
+        //     <p>This is a reminder of your upcoming appointment with Dr. ${appointment.doctor.user.lastName} on ${new Date(appointment.startTime).toLocaleString()}.</p>
+        //     <p>Please arrive 15 minutes before your scheduled appointment time.</p>
+        //   `
+        // });
+      }
+
+      return {
+        success: true,
+        message: `Appointment reminder email sent successfully to ${to}`,
+      };
+    } catch (error) {
+      logger.error('Failed to send appointment reminder email', {
+        error: error.message,
+        appointmentId: appointment?._id,
+      });
+      throw new Error('Failed to send appointment reminder email');
     }
   }
   
