@@ -11,6 +11,116 @@ const { v4: uuidv4 } = require('uuid');
  * Service for managing appointments in the Healthcare Management Application
  */
 const appointmentService = {
+
+
+  /**
+ * Initialize default appointment types in the system
+ * @returns {Promise<Array>} Created default appointment types
+ */
+initializeDefaultTypes: async () => {
+  try {
+    logger.info('Initializing default appointment types');
+    
+    // Check if we already have types in the system
+    const existingCount = await AppointmentType.countDocuments();
+    if (existingCount > 0) {
+      logger.info('Appointment types already exist, skipping initialization');
+      return { message: 'Appointment types already initialized' };
+    }
+    
+    // CHANGE: Enhanced default types with priority and more distinctive colors
+    const defaultTypes = [
+      {
+        name: 'New Patient',
+        description: 'Initial consultation for new patients',
+        duration: 45,
+        bufferTime: 5,
+        requirements: ['Complete registration form', 'Bring ID and insurance card'],
+        isNewPatient: true,
+        color: '#27ae60', // Green
+        priority: 'normal'
+      },
+      {
+        name: 'Follow-Up',
+        description: 'Follow-up appointment for existing patients',
+        duration: 15,
+        bufferTime: 5,
+        requirements: ['Bring updated medication list'],
+        color: '#3498db', // Blue
+        priority: 'normal'
+      },
+      {
+        name: 'Telehealth',
+        description: 'Virtual appointment via video conference',
+        duration: 20,
+        bufferTime: 0,
+        requirements: ['Stable internet connection', 'Quiet private space'],
+        requiresVideoLink: true,
+        color: '#9b59b6', // Purple
+        priority: 'normal'
+      },
+      {
+        name: 'Annual Physical',
+        description: 'Comprehensive yearly physical examination',
+        duration: 60,
+        bufferTime: 10,
+        requirements: ['Fasting for 8 hours prior', 'Wear comfortable clothing'],
+        color: '#f39c12', // Orange
+        priority: 'normal'
+      },
+      {
+        name: 'Urgent Care',
+        description: 'Immediate care for non-emergency conditions',
+        duration: 30,
+        bufferTime: 0,
+        requirements: ['Bring list of current symptoms'],
+        color: '#e74c3c', // Red
+        priority: 'high'
+      },
+      {
+        name: 'Emergency',
+        description: 'Emergency medical care',
+        duration: 60,
+        bufferTime: 0,
+        requirements: [],
+        color: '#c0392b', // Dark Red
+        priority: 'urgent'
+      },
+      {
+        name: 'Lab Work',
+        description: 'Blood tests and other laboratory work',
+        duration: 15,
+        bufferTime: 5,
+        requirements: ['Fasting may be required for certain tests'],
+        color: '#16a085', // Teal
+        priority: 'low'
+      },
+      {
+        name: 'Specialist Consultation',
+        description: 'Consultation with a medical specialist',
+        duration: 45,
+        bufferTime: 5,
+        requirements: ['Referral from primary care physician'],
+        color: '#8e44ad', // Dark Purple
+        priority: 'normal'
+      }
+    ];
+    
+    // Insert all default types
+    const createdTypes = await AppointmentType.insertMany(defaultTypes);
+    
+    logger.info('Successfully initialized default appointment types', { 
+      count: createdTypes.length 
+    });
+    
+    return createdTypes;
+  } catch (error) {
+    logger.error('Failed to initialize default appointment types', { 
+      error: error.message 
+    });
+    throw error;
+  }
+},
   /**
    * Create a new appointment
    * @param {Object} data - Appointment data

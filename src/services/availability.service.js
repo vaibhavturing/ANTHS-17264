@@ -11,6 +11,116 @@ const { NotFoundError, ValidationError } = require('../utils/errors');
  * Service for managing doctor availability
  */
 const availabilityService = {
+
+
+  /**
+ * Get doctor's availability in a date range
+ * @param {string} doctorId - Doctor ID
+ * @param {Date} startDate - Range start date
+ * @param {Date} endDate - Range end date
+ * @returns {Promise<Array>} List of availability slots
+ */
+getDoctorAvailabilityInRange: async (doctorId, startDate, endDate) => {
+  try {
+    logger.info('Getting doctor availability in date range', { 
+      doctorId, 
+      startDate, 
+      endDate 
+    });
+    
+    const availabilitySlots = [];
+    
+    // Convert to moment objects for easier date manipulation
+    const start = moment(startDate);
+    const end = moment(endDate);
+    
+    // Iterate through days in the range
+    const currentDay = moment(start);
+    while (currentDay.isSameOrBefore(end, 'day')) {
+      const dailyAvailability = await availabilityService.getDoctorDailyAvailability(
+        doctorId,
+        currentDay.toDate()
+      );
+      
+      if (dailyAvailability && dailyAvailability.timeSlots) {
+        // Add the day's time slots to the result
+        availabilitySlots.push(...dailyAvailability.timeSlots);
+      }
+      
+      // Move to next day
+      currentDay.add(1, 'day');
+    }
+    
+    logger.info('Successfully got doctor availability in range', { 
+      doctorId, 
+      slotsCount: availabilitySlots.length 
+    });
+    
+    return availabilitySlots;
+  } catch (error) {
+    logger.error('Failed to get doctor availability in range', { 
+      error: error.message,
+      doctorId,
+      startDate,
+      endDate
+    });
+    
+    throw error;
+  }
+},
+
+/**
+ * Get doctor's blocked time (leave, vacation, etc.) in a date range
+ * @param {string} doctorId - Doctor ID
+ * @param {Date} startDate - Range start date
+ * @param {Date} endDate - Range end date
+ * @returns {Promise<Array>} List of blocked time periods
+ */
+getDoctorBlockedTimeInRange: async (doctorId, startDate, endDate) => {
+  try {
+    logger.info('Getting doctor blocked time in date range', { 
+      doctorId, 
+      startDate, 
+      endDate 
+    });
+    
+    // Query the database for leave periods that overlap with the date range
+    const blockedPeriods = await Leave.find({
+      doctor: doctorId,
+      $or: [
+        { startDate: { $lte: endDate }, endDate: { $gte: startDate } },
+        { startDate: { $gte: startDate, $lte: endDate } },
+        { endDate: { $gte: startDate, $lte: endDate } }
+      ]
+    }).lean();
+    
+    // Format the blocked periods for calendar display
+    const formattedPeriods = blockedPeriods.map(period => ({
+      startTime: period.startDate,
+      endTime: period.endDate,
+      reason: period.reason,
+      type: period.type || 'leave'
+    }));
+    
+    logger.info('Successfully got doctor blocked time in range', { 
+      doctorId, 
+      periodsCount: formattedPeriods.length 
+    });
+    
+    return formattedPeriods;
+  } catch (error) {
+    logger.error('Failed to get doctor blocked time in range', { 
+      error: error.message,
+      doctorId,
+      startDate,
+      endDate
+    });
+    
+    throw error;
+  }
+},
+
+
   /**
    * Get doctor availability
    * @param {string} doctorId - Doctor ID

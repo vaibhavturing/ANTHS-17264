@@ -47,15 +47,28 @@ const appointmentTypeSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // Color for calendar visualization
+  // CHANGE: Enhanced color field with documentation
+  // Color for calendar visualization - used to color-code different appointment types
   color: {
     type: String,
-    default: '#3498db' // Default blue color
+    default: '#3498db', // Default blue color,
+    validate: {
+      validator: function(v) {
+        return /^#[0-9a-fA-F]{6}$/.test(v);
+      },
+      message: 'Color must be a valid hex color code (e.g., #3498db)'
+    }
   },
   // Whether this appointment type is active/available for booking
   isActive: {
     type: Boolean,
     default: true
+  },
+  // CHANGE: Added priority field for visual emphasis (emergencies, etc.)
+  priority: {
+    type: String,
+    enum: ['low', 'normal', 'high', 'urgent'],
+    default: 'normal'
   },
   // Specific doctors who offer this appointment type
   // If empty, available to all doctors

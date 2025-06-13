@@ -30,7 +30,8 @@ const billingRoutes = require('./billing.routes');     // Added new billing rout
 const analyticsRoutes = require('./analytics.routes'); // Added new analytics routes
 // CHANGE: Added import for recurring appointment routes
 const recurringAppointmentRoutes = require('./recurringAppointment.routes');
-
+// CHANGE: Added import for calendar routes
+const calendarRoutes = require('./calendar.routes');
 
 
 const router = express.Router();
@@ -75,6 +76,9 @@ const mountRoutes = () => {
   router.use('/analytics', analyticsRoutes); // Added new analytics routes
   // CHANGE: Added recurring appointment routes
   router.use('/api/recurring-appointments', recurringAppointmentRoutes);
+  // CHANGE: Added calendar routes
+  router.use('/api/calendar', calendarRoutes);
+
 
 
   // All routes below this point require authentication
