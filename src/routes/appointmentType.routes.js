@@ -1,95 +1,58 @@
 const express = require('express');
-const appointmentTypeController = require('../controllers/appointmentType.controller');
-const { authMiddleware } = require('../middleware/auth.middleware');
-const { validateRequest } = require('../middleware/validate.middleware');
-const appointmentTypeValidator = require('../validators/appointmentType.validator');
-
 const router = express.Router();
+const appointmentTypeController = require('../controllers/appointmentType.controller');
+const authMiddleware = require('../middleware/auth.middleware');
+const permissionMiddleware = require('../middleware/permission.middleware');
 
 /**
- * @route   POST /api/appointment-types
- * @desc    Create a new appointment type
- * @access  Admin
+ * Appointment type routes
+ * @route /api/appointment-types
  */
-router.post(
-  '/',
-  authMiddleware(['admin']),
-  validateRequest(appointmentTypeValidator.createAppointmentType),
-  appointmentTypeController.createAppointmentType
+
+// Get all appointment types
+router.get('/', 
+  authMiddleware.protect, 
+  appointmentTypeController.getAppointmentTypes
 );
 
-/**
- * @route   GET /api/appointment-types
- * @desc    Get all appointment types
- * @access  All authenticated users
- */
-router.get(
-  '/',
-  authMiddleware(),
-  appointmentTypeController.getAllAppointmentTypes
-);
-
-/**
- * @route   GET /api/appointment-types/:id
- * @desc    Get appointment type by ID
- * @access  All authenticated users
- */
-router.get(
-  '/:id',
-  authMiddleware(),
-  validateRequest(appointmentTypeValidator.idParam, 'params'),
+// Get appointment type by ID
+router.get('/:id', 
+  authMiddleware.protect, 
   appointmentTypeController.getAppointmentTypeById
 );
 
-/**
- * @route   PUT /api/appointment-types/:id
- * @desc    Update appointment type
- * @access  Admin
- */
-router.put(
-  '/:id',
-  authMiddleware(['admin']),
-  validateRequest(appointmentTypeValidator.idParam, 'params'),
-  validateRequest(appointmentTypeValidator.updateAppointmentType),
+// Get appointment types for a specific doctor
+router.get('/doctor/:doctorId', 
+  authMiddleware.protect, 
+  appointmentTypeController.getAppointmentTypesForDoctor
+);
+
+// Create new appointment type (Admin only)
+router.post('/', 
+  authMiddleware.protect, 
+  permissionMiddleware.restrictTo('admin'), 
+  appointmentTypeController.createAppointmentType
+);
+
+// Initialize default appointment types (Admin only)
+router.post('/initialize', 
+  authMiddleware.protect, 
+  permissionMiddleware.restrictTo('admin'), 
+  appointmentTypeController.initializeDefaultTypes
+);
+
+// Update appointment type (Admin only)
+router.put('/:id', 
+  authMiddleware.protect, 
+  permissionMiddleware.restrictTo('admin'), 
   appointmentTypeController.updateAppointmentType
 );
 
-/**
- * @route   DELETE /api/appointment-types/:id
- * @desc    Delete appointment type
- * @access  Admin
- */
-router.delete(
-  '/:id',
-  authMiddleware(['admin']),
-  validateRequest(appointmentTypeValidator.idParam, 'params'),
+// Delete appointment type (Admin only)
+router.delete('/:id', 
+  authMiddleware.protect, 
+  permissionMiddleware.restrictTo('admin'), 
   appointmentTypeController.deleteAppointmentType
-);
-
-/**
- * @route   PUT /api/appointment-types/:id/doctor-settings/:doctorId
- * @desc    Update doctor-specific settings for an appointment type
- * @access  Admin or the specific doctor
- */
-router.put(
-  '/:id/doctor-settings/:doctorId',
-  authMiddleware(), // Further permission checks in the controller
-  validateRequest(appointmentTypeValidator.idParam, 'params'),
-  validateRequest(appointmentTypeValidator.doctorIdParam, 'params'),
-  validateRequest(appointmentTypeValidator.updateDoctorSettings),
-  appointmentTypeController.updateDoctorSettings
-);
-
-/**
- * @route   GET /api/doctors/:doctorId/appointment-types
- * @desc    Get appointment types for a specific doctor
- * @access  All authenticated users
- */
-router.get(
-  '/doctor/:doctorId',
-  authMiddleware(),
-  validateRequest(appointmentTypeValidator.doctorIdParam, 'params'),
-  appointmentTypeController.getAppointmentTypesForDoctor
 );
 
 module.exports = router;
