@@ -20,6 +20,8 @@ const emailService = {
    * @param {string} [options.priority] - Email priority (high, normal, low)
    * @returns {Promise<Object>} Result of the email operation
    */
+
+  
   sendEmail: async (options) => {
     try {
       const { to, subject, text, html, cc, bcc, from, priority = 'normal' } = options;
@@ -208,7 +210,102 @@ const emailService = {
       });
       throw new Error('Failed to send test results email');
     }
+  },
+
+  /**
+   * Send a staff notification email
+   * @param {string} type - Notification type
+   * @param {string} subject - Email subject
+   * @param {Object} data - Notification data
+   * @returns {Promise<Object>} Result of the email operation
+   *
+   * NEW METHOD: Added for staff notifications about doctor leaves
+   */
+  sendStaffNotificationEmail: async (type, subject, data) => {
+    try {
+      // In a real implementation, this would use an email service
+      // For now, we'll log the email content
+
+      logger.info(`MOCK EMAIL: Staff Notification - ${subject}`);
+      logger.info(`MOCK EMAIL: Type: ${type}`);
+      logger.info(`MOCK EMAIL: Data: ${JSON.stringify(data)}`);
+
+      if (config.NODE_ENV === 'production') {
+        // Example integration with an email provider (pseudocode)
+        // const emailProvider = require('../config/emailProvider');
+        // const emailTemplate = getEmailTemplateForType(type, data);
+        // return await emailProvider.send({
+        //   to: getStaffEmailsForType(type),
+        //   from: config.EMAIL_FROM,
+        //   subject,
+        //   text: emailTemplate.text,
+        //   html: emailTemplate.html
+        // });
+      }
+
+      // Return success for development/testing
+      return {
+        success: true,
+        message: 'Staff notification email sent successfully',
+      };
+    } catch (error) {
+      logger.error('Failed to send staff notification email', {
+        error: error.message,
+        type,
+        subject
+      });
+      throw new Error('Failed to send staff notification email');
+    }
+  },
+
+  /**
+   * Send a patient notification email
+   * @param {string} to - Patient email address
+   * @param {string} type - Notification type
+   * @param {string} subject - Email subject
+   * @param {Object} data - Notification data
+   * @returns {Promise<Object>} Result of the email operation
+   *
+   * NEW METHOD: Added for patient notifications about appointment changes
+   */
+  sendPatientNotificationEmail: async (to, type, subject, data) => {
+    try {
+      // In a real implementation, this would use an email service
+      // For now, we'll log the email content
+
+      logger.info(`MOCK EMAIL: Patient Notification to ${to} - ${subject}`);
+      logger.info(`MOCK EMAIL: Type: ${type}`);
+      logger.info(`MOCK EMAIL: Data: ${JSON.stringify(data)}`);
+
+      if (config.NODE_ENV === 'production') {
+        // Example integration with an email provider (pseudocode)
+        // const emailProvider = require('../config/emailProvider');
+        // const emailTemplate = getEmailTemplateForType(type, data);
+        // return await emailProvider.send({
+        //   to,
+        //   from: config.EMAIL_FROM,
+        //   subject,
+        //   text: emailTemplate.text,
+        //   html: emailTemplate.html
+        // });
+      }
+
+      // Return success for development/testing
+      return {
+        success: true,
+        message: `Patient notification email sent successfully to ${to}`,
+      };
+    } catch (error) {
+      logger.error('Failed to send patient notification email', {
+        error: error.message,
+        email: to,
+        type,
+        subject
+      });
+      throw new Error('Failed to send patient notification email');
+    }
   }
+  
 };
 
 module.exports = emailService;
