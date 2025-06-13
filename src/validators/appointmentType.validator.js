@@ -1,122 +1,155 @@
-// File: src/validators/appointmentType.validator.js
-const { body, param, query } = require('express-validator');
+const Joi = require('joi');
+const { joiObjectId } = require('./common.validator');
 
 /**
- * Validators for appointment type operations
+ * Validation schemas for appointment type operations
  */
 const appointmentTypeValidator = {
-  // Validator for creating an appointment type
-  createAppointmentType: [
-    body('name')
-      .notEmpty().withMessage('Name is required')
-      .isString().withMessage('Name must be a string')
-      .trim()
-      .isLength({ min: 2, max: 100 }).withMessage('Name must be between 2 and 100 characters'),
-    
-    body('description')
-      .optional()
-      .isString().withMessage('Description must be a string')
-      .trim(),
-    
-    body('duration')
-      .isInt({ min: 5 }).withMessage('Duration must be at least 5 minutes'),
-    
-    body('bufferTime')
-      .optional()
-      .isInt({ min: 0 }).withMessage('Buffer time must be a non-negative integer'),
-    
-    body('color')
-      .optional()
-      .isString().withMessage('Color must be a string')
-      .matches(/^#[0-9A-F]{6}$/i).withMessage('Color must be a valid hex color code (e.g., #3498db)'),
-    
-    body('preparationTime')
-      .optional()
-      .isInt({ min: 0 }).withMessage('Preparation time must be a non-negative integer'),
-    
-    body('department')
-      .optional()
-      .isMongoId().withMessage('Invalid department ID format'),
-    
-    body('isOnlineBookable')
-      .optional()
-      .isBoolean().withMessage('isOnlineBookable must be a boolean'),
-    
-    body('specialRequirements')
-      .optional()
-      .isString().withMessage('Special requirements must be a string'),
-    
-    body('status')
-      .optional()
-      .isIn(['active', 'inactive']).withMessage('Status must be active or inactive'),
-    
-    body('requiredResources')
-      .optional()
-      .isArray().withMessage('Required resources must be an array'),
-    
-    body('requiredResources.*.resource')
-      .optional()
-      .isMongoId().withMessage('Invalid resource ID format'),
-    
-    body('requiredResources.*.quantity')
-      .optional()
-      .isInt({ min: 1 }).withMessage('Resource quantity must be a positive integer')
-  ],
-  
-  // Validator for updating an appointment type
-  updateAppointmentType: [
-    param('typeId')
-      .isMongoId().withMessage('Invalid appointment type ID format'),
-    
-    body('name')
-      .optional()
-      .isString().withMessage('Name must be a string')
-      .trim()
-      .isLength({ min: 2, max: 100 }).withMessage('Name must be between 2 and 100 characters'),
-    
-    body('description')
-      .optional()
-      .isString().withMessage('Description must be a string')
-      .trim(),
-    
-    body('duration')
-      .optional()
-      .isInt({ min: 5 }).withMessage('Duration must be at least 5 minutes'),
-    
-    body('bufferTime')
-      .optional()
-      .isInt({ min: 0 }).withMessage('Buffer time must be a non-negative integer'),
-    
-    body('color')
-      .optional()
-      .isString().withMessage('Color must be a string')
-      .matches(/^#[0-9A-F]{6}$/i).withMessage('Color must be a valid hex color code (e.g., #3498db)'),
-    
-    body('preparationTime')
-      .optional()
-      .isInt({ min: 0 }).withMessage('Preparation time must be a non-negative integer'),
-    
-    body('isOnlineBookable')
-      .optional()
-      .isBoolean().withMessage('isOnlineBookable must be a boolean'),
-    
-    body('specialRequirements')
-      .optional()
-      .isString().withMessage('Special requirements must be a string'),
-    
-    body('status')
-      .optional()
-      .isIn(['active', 'inactive']).withMessage('Status must be active or inactive')
-  ],
-  
-  // Validator for toggling appointment type status
-  toggleStatus: [
-    param('typeId')
-      .isMongoId().withMessage('Invalid appointment type ID format'),
-    
-    body('status')
-      .isIn(['active', 'inactive']).withMessage('Status must be active or inactive')
-  ]
+  /**
+   * Validate appointment type ID in params
+   */
+  idParam: Joi.object({
+    id: joiObjectId.required().messages({
+      'string.pattern.name': 'Invalid appointment type ID format'
+    })
+  }),
+
+  /**
+   * Validate doctor ID in params
+   */
+  doctorIdParam: Joi.object({
+    doctorId: joiObjectId.required().messages({
+      'string.pattern.name': 'Invalid doctor ID format'
+    })
+  }),
+
+  /**
+   * Validate appointment type creation
+   */
+  createAppointmentType: Joi.object({
+    name: Joi.string().required().trim().min(2).max(100)
+      .messages({
+        'string.empty': 'Name is required',
+        'string.min': 'Name must be at least 2 characters',
+        'string.max': 'Name cannot exceed 100 characters'
+      }),
+    description: Joi.string().trim().allow('').max(500)
+      .messages({
+        'string.max': 'Description cannot exceed 500 characters'
+      }),
+    color: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).default('#3498db')
+      .messages({
+        'string.pattern.base': 'Color must be a valid hex color code (e.g. #3498db)'
+      }),
+    duration: Joi.number().integer().min(5).max(240).default(30)
+      .messages({
+        'number.base': 'Duration must be a number',
+        'number.integer': 'Duration must be a whole number',
+        'number.min': 'Duration must be at least 5 minutes',
+        'number.max': 'Duration cannot exceed 240 minutes (4 hours)'
+      }),
+    bufferTime: Joi.number().integer().min(0).max(60).default(0)
+      .messages({
+        'number.base': 'Buffer time must be a number',
+        'number.integer': 'Buffer time must be a whole number',
+        'number.min': 'Buffer time cannot be negative',
+        'number.max': 'Buffer time cannot exceed 60 minutes'
+      }),
+    isVirtual: Joi.boolean().default(false),
+    isActive: Joi.boolean().default(true),
+    preparationInstructions: Joi.string().trim().allow('').max(1000)
+      .messages({
+        'string.max': 'Preparation instructions cannot exceed 1000 characters'
+      }),
+    specialties: Joi.array().items(
+      Joi.string().trim().min(2).max(100)
+    ).default([]),
+    doctorSettings: Joi.array().items(
+      Joi.object({
+        doctorId: joiObjectId.required(),
+        duration: Joi.number().integer().min(5).max(240),
+        bufferTime: Joi.number().integer().min(0).max(60),
+        isActive: Joi.boolean(),
+        preparationInstructions: Joi.string().trim().allow('').max(1000)
+      })
+    ).default([])
+  }),
+
+  /**
+   * Validate appointment type updates
+   */
+  updateAppointmentType: Joi.object({
+    name: Joi.string().trim().min(2).max(100)
+      .messages({
+        'string.min': 'Name must be at least 2 characters',
+        'string.max': 'Name cannot exceed 100 characters'
+      }),
+    description: Joi.string().trim().allow('').max(500)
+      .messages({
+        'string.max': 'Description cannot exceed 500 characters'
+      }),
+    color: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/)
+      .messages({
+        'string.pattern.base': 'Color must be a valid hex color code (e.g. #3498db)'
+      }),
+    duration: Joi.number().integer().min(5).max(240)
+      .messages({
+        'number.base': 'Duration must be a number',
+        'number.integer': 'Duration must be a whole number',
+        'number.min': 'Duration must be at least 5 minutes',
+        'number.max': 'Duration cannot exceed 240 minutes (4 hours)'
+      }),
+    bufferTime: Joi.number().integer().min(0).max(60)
+      .messages({
+        'number.base': 'Buffer time must be a number',
+        'number.integer': 'Buffer time must be a whole number',
+        'number.min': 'Buffer time cannot be negative',
+        'number.max': 'Buffer time cannot exceed 60 minutes'
+      }),
+    isVirtual: Joi.boolean(),
+    isActive: Joi.boolean(),
+    preparationInstructions: Joi.string().trim().allow('').max(1000)
+      .messages({
+        'string.max': 'Preparation instructions cannot exceed 1000 characters'
+      }),
+    specialties: Joi.array().items(
+      Joi.string().trim().min(2).max(100)
+    ),
+    doctorSettings: Joi.array().items(
+      Joi.object({
+        doctorId: joiObjectId.required(),
+        duration: Joi.number().integer().min(5).max(240),
+        bufferTime: Joi.number().integer().min(0).max(60),
+        isActive: Joi.boolean(),
+        preparationInstructions: Joi.string().trim().allow('').max(1000)
+      })
+    )
+  }),
+
+  /**
+   * Validate doctor-specific setting updates
+   */
+  updateDoctorSettings: Joi.object({
+    duration: Joi.number().integer().min(5).max(240)
+      .messages({
+        'number.base': 'Duration must be a number',
+        'number.integer': 'Duration must be a whole number',
+        'number.min': 'Duration must be at least 5 minutes',
+        'number.max': 'Duration cannot exceed 240 minutes (4 hours)'
+      }),
+    bufferTime: Joi.number().integer().min(0).max(60)
+      .messages({
+        'number.base': 'Buffer time must be a number',
+        'number.integer': 'Buffer time must be a whole number',
+        'number.min': 'Buffer time cannot be negative',
+        'number.max': 'Buffer time cannot exceed 60 minutes'
+      }),
+    isActive: Joi.boolean(),
+    preparationInstructions: Joi.string().trim().allow('').max(1000)
+      .messages({
+        'string.max': 'Preparation instructions cannot exceed 1000 characters'
+      })
+  })
 };
 
-module.exports = { appointmentTypeValidator };
+module.exports = appointmentTypeValidator;

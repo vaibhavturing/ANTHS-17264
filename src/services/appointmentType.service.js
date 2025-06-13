@@ -1,207 +1,241 @@
-// File: src/services/appointmentType.service.js
 const AppointmentType = require('../models/appointmentType.model');
-const mongoose = require('mongoose');
+const Doctor = require('../models/doctor.model');
 const logger = require('../utils/logger');
-const { ApiError } = require('../utils/errors');
+const { NotFoundError, ValidationError } = require('../utils/errors');
 
 /**
- * Appointment Type Service
- * Handles creation and management of appointment types 
+ * Service for managing appointment types
  */
 const appointmentTypeService = {
   /**
    * Create a new appointment type
-   * @param {Object} typeData - The appointment type data
+   * @param {Object} data - Appointment type data
    * @returns {Promise<Object>} Created appointment type
    */
-  createAppointmentType: async (typeData) => {
+  createAppointmentType: async (data) => {
     try {
-      const appointmentType = new AppointmentType(typeData);
+      logger.info('Creating new appointment type', { 
+        name: data.name, 
+        duration: data.duration 
+      });
+      
+      const appointmentType = new AppointmentType(data);
       await appointmentType.save();
       
-      logger.info('Created new appointment type', {
-        name: appointmentType.name,
-        duration: appointmentType.duration,
-        typeId: appointmentType._id
-      });
-      
+      logger.info('Successfully created appointment type', { id: appointmentType._id });
       return appointmentType;
     } catch (error) {
-      logger.error('Failed to create appointment type', {
-        error: error.message
+      logger.error('Error creating appointment type', { 
+        error: error.message,
+        data 
       });
       throw error;
     }
   },
-  
+
   /**
-   * Update an appointment type
-   * @param {string} typeId - The appointment type ID
-   * @param {Object} updateData - Data to update
-   * @returns {Promise<Object>} Updated appointment type
-   */
-  updateAppointmentType: async (typeId, updateData) => {
-    try {
-      const appointmentType = await AppointmentType.findById(typeId);
-      
-      if (!appointmentType) {
-        throw new ApiError('Appointment type not found', 404);
-      }
-      
-      // Apply updates
-      Object.keys(updateData).forEach(key => {
-        appointmentType[key] = updateData[key];
-      });
-      
-      await appointmentType.save();
-      
-      logger.info('Updated appointment type', {
-        typeId,
-        name: appointmentType.name
-      });
-      
-      return appointmentType;
-    } catch (error) {
-      logger.error('Failed to update appointment type', {
-        typeId,
-        error: error.message
-      });
-      throw error;
-    }
-  },
-  
-  /**
-   * Get appointment type by ID
-   * @param {string} typeId - The appointment type ID
-   * @returns {Promise<Object>} Appointment type
-   */
-  getAppointmentTypeById: async (typeId) => {
-    try {
-      const appointmentType = await AppointmentType.findById(typeId);
-      
-      if (!appointmentType) {
-        throw new ApiError('Appointment type not found', 404);
-      }
-      
-      return appointmentType;
-    } catch (error) {
-      logger.error('Failed to get appointment type', {
-        typeId,
-        error: error.message
-      });
-      throw error;
-    }
-  },
-  
-  /**
-   * Get all appointment types with optional filtering
-   * @param {Object} filters - Optional filters
+   * Get all appointment types
+   * @param {Object} filter - Optional filter criteria
    * @returns {Promise<Array>} List of appointment types
    */
-  getAllAppointmentTypes: async (filters = {}) => {
+  getAllAppointmentTypes: async (filter = {}) => {
     try {
-      const query = {};
-      
-      // Apply status filter
-      if (filters.status) {
-        query.status = filters.status;
-      }
-      
-      // Apply department filter
-      if (filters.department) {
-        query.department = filters.department;
-      }
-      
-      // Apply minimum/maximum duration filters
-      if (filters.minDuration) {
-        query.duration = { $gte: filters.minDuration };
-      }
-      
-      if (filters.maxDuration) {
-        if (query.duration) {
-          query.duration.$lte = filters.maxDuration;
-        } else {
-          query.duration = { $lte: filters.maxDuration };
-        }
-      }
-      
-      // Apply online bookable filter
-      if (filters.isOnlineBookable !== undefined) {
-        query.isOnlineBookable = filters.isOnlineBookable;
-      }
-      
-      const appointmentTypes = await AppointmentType.find(query)
-        .populate('department', 'name')
-        .sort('name');
+      const appointmentTypes = await AppointmentType.find(filter)
+        .sort({ name: 1 });
       
       return appointmentTypes;
     } catch (error) {
-      logger.error('Failed to get appointment types', {
-        filters,
-        error: error.message
-      });
-      throw new ApiError('Failed to retrieve appointment types', 500, error.message);
+      logger.error('Error fetching appointment types', { error: error.message });
+      throw error;
     }
   },
-  
+
   /**
-   * Get appointment types for a department
-   * @param {string} departmentId - The department ID
-   * @param {boolean} activeOnly - Whether to return active types only
-   * @returns {Promise<Array>} List of appointment types
+   * Get appointment type by ID
+   * @param {string} id - Appointment type ID
+   * @returns {Promise<Object>} Appointment type
    */
-  getAppointmentTypesByDepartment: async (departmentId, activeOnly = true) => {
+  getAppointmentTypeById: async (id) => {
     try {
-      const query = { department: departmentId };
-      
-      if (activeOnly) {
-        query.status = 'active';
-      }
-      
-      const types = await AppointmentType.find(query).sort('name');
-      
-      return types;
-    } catch (error) {
-      logger.error('Failed to get appointment types for department', {
-        departmentId,
-        error: error.message
-      });
-      throw new ApiError('Failed to retrieve department appointment types', 500, error.message);
-    }
-  },
-  
-  /**
-   * Toggle appointment type status (active/inactive)
-   * @param {string} typeId - The appointment type ID
-   * @param {string} status - The new status
-   * @returns {Promise<Object>} Updated appointment type
-   */
-  toggleAppointmentTypeStatus: async (typeId, status) => {
-    try {
-      if (!['active', 'inactive'].includes(status)) {
-        throw new ApiError('Invalid status. Must be "active" or "inactive"', 400);
-      }
-      
-      const appointmentType = await AppointmentType.findById(typeId);
+      const appointmentType = await AppointmentType.findById(id);
       
       if (!appointmentType) {
-        throw new ApiError('Appointment type not found', 404);
+        throw new NotFoundError('Appointment type not found');
       }
-      
-      appointmentType.status = status;
-      await appointmentType.save();
-      
-      logger.info(`Appointment type status changed to ${status}`, {
-        typeId,
-        name: appointmentType.name
-      });
       
       return appointmentType;
     } catch (error) {
-      logger.error('Failed to toggle appointment type status', {
-        typeId,
-        status,
-        error: error.message
+      logger.error('Error fetching appointment type', { 
+        error: error.message,
+        id 
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Update appointment type
+   * @param {string} id - Appointment type ID
+   * @param {Object} updates - Updates to apply
+   * @returns {Promise<Object>} Updated appointment type
+   */
+  updateAppointmentType: async (id, updates) => {
+    try {
+      const appointmentType = await AppointmentType.findById(id);
+      
+      if (!appointmentType) {
+        throw new NotFoundError('Appointment type not found');
+      }
+      
+      // Apply updates
+      Object.keys(updates).forEach(key => {
+        appointmentType[key] = updates[key];
+      });
+      
+      await appointmentType.save();
+      
+      logger.info('Successfully updated appointment type', { id });
+      return appointmentType;
+    } catch (error) {
+      logger.error('Error updating appointment type', { 
+        error: error.message,
+        id,
+        updates 
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Delete appointment type
+   * @param {string} id - Appointment type ID
+   * @returns {Promise<Object>} Deletion result
+   */
+  deleteAppointmentType: async (id) => {
+    try {
+      const result = await AppointmentType.deleteOne({ _id: id });
+      
+      if (result.deletedCount === 0) {
+        throw new NotFoundError('Appointment type not found');
+      }
+      
+      logger.info('Successfully deleted appointment type', { id });
+      return { success: true };
+    } catch (error) {
+      logger.error('Error deleting appointment type', { 
+        error: error.message,
+        id 
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Get appointment types for a specific doctor
+   * @param {string} doctorId - Doctor ID
+   * @param {boolean} activeOnly - Whether to fetch only active appointment types
+   * @returns {Promise<Array>} List of appointment types with doctor-specific settings
+   */
+  getAppointmentTypesForDoctor: async (doctorId, activeOnly = true) => {
+    try {
+      // Verify doctor exists
+      const doctorExists = await Doctor.exists({ _id: doctorId });
+      
+      if (!doctorExists) {
+        throw new NotFoundError('Doctor not found');
+      }
+      
+      // Get appointment types
+      if (activeOnly) {
+        return await AppointmentType.findActiveForDoctor(doctorId);
+      } else {
+        const allTypes = await AppointmentType.find();
+        
+        // Process each type to include doctor settings
+        return allTypes.map(type => {
+          const settings = type.getSettingsForDoctor(doctorId);
+          return {
+            _id: type._id,
+            name: type.name,
+            description: type.description,
+            color: type.color,
+            duration: settings.duration,
+            bufferTime: settings.bufferTime,
+            isVirtual: type.isVirtual,
+            isActive: settings.isActive,
+            preparationInstructions: settings.preparationInstructions
+          };
+        });
+      }
+    } catch (error) {
+      logger.error('Error fetching appointment types for doctor', { 
+        error: error.message,
+        doctorId,
+        activeOnly
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Update doctor-specific settings for an appointment type
+   * @param {string} id - Appointment type ID
+   * @param {string} doctorId - Doctor ID
+   * @param {Object} settings - Doctor-specific settings
+   * @returns {Promise<Object>} Updated appointment type
+   */
+  updateDoctorSettings: async (id, doctorId, settings) => {
+    try {
+      const appointmentType = await AppointmentType.findById(id);
+      
+      if (!appointmentType) {
+        throw new NotFoundError('Appointment type not found');
+      }
+      
+      // Verify doctor exists
+      const doctorExists = await Doctor.exists({ _id: doctorId });
+      
+      if (!doctorExists) {
+        throw new NotFoundError('Doctor not found');
+      }
+      
+      // Validate settings
+      if (settings.duration && (settings.duration < 5 || settings.duration > 240)) {
+        throw new ValidationError('Duration must be between 5 and 240 minutes');
+      }
+      
+      if (settings.bufferTime && (settings.bufferTime < 0 || settings.bufferTime > 60)) {
+        throw new ValidationError('Buffer time must be between 0 and 60 minutes');
+      }
+      
+      // Find existing doctor settings or create new one
+      const existingSettingIndex = appointmentType.doctorSettings.findIndex(
+        setting => setting.doctorId.toString() === doctorId.toString()
+      );
+      
+      if (existingSettingIndex >= 0) {
+        // Update existing settings
+        Object.keys(settings).forEach(key => {
+          appointmentType.doctorSettings[existingSettingIndex][key] = settings[key];
+        });
+      } else {
+        // Add new doctor settings
+        appointmentType.doctorSettings.push({
+          doctorId,
+          ...settings
+        });
+      }
+      
+      await appointmentType.save();
+      
+      logger.info('Successfully updated doctor settings for appointment type', { id, doctorId });
+      return appointmentType;
+    } catch (error) {
+      logger.error('Error updating doctor settings for appointment type', { 
+        error: error.message,
+        id,
+        doctorId,
+        settings 
       });
       throw error;
     }

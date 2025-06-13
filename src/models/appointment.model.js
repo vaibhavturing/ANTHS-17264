@@ -1,7 +1,11 @@
-// src/models/appointment.model.js
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
+const logger = require('../utils/logger');
 
+/**
+ * Appointment Schema
+ * Stores information about scheduled appointments
+ */
 const appointmentSchema = new mongoose.Schema({
   patient: {
     type: mongoose.Schema.Types.ObjectId,
@@ -13,178 +17,194 @@ const appointmentSchema = new mongoose.Schema({
     ref: 'Doctor',
     required: true
   },
+  appointmentType: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AppointmentType',
+    required: true
+  },
+  // Start time of the appointment
   startTime: {
     type: Date,
     required: true
   },
+  // End time is calculated from the duration
   endTime: {
     type: Date,
     required: true
   },
+  // Duration in minutes (this may differ from appointmentType.duration due to doctor-specific settings)
+  duration: {
+    type: Number,
+    required: true,
+    min: 5,
+    max: 240, // Max 4 hours
+    default: 30
+  },
+  // Buffer time in minutes after this appointment
+  bufferTime: {
+    type: Number,
+    min: 0,
+    max: 60, // Max 1 hour buffer
+    default: 0
+  },
   status: {
     type: String,
-    enum: ['scheduled', 'checked_in', 'in_progress', 'completed', 'cancelled', 'no_show'],
+    enum: ['scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show'],
     default: 'scheduled'
   },
-  type: {
+  cancelledBy: {
     type: String,
-    enum: ['new_patient', 'follow_up', 'specialist', 'urgent', 'routine'],
-    required: true
-  },
-  reason: {
-    type: String,
-    required: true
-  },
-  notes: {
-    type: String
-  },
-  checkinTime: {
-    type: Date
-  },
-  completionTime: {
-    type: Date
+    enum: ['patient', 'doctor', 'admin', null],
+    default: null
   },
   cancellationReason: {
     type: String
   },
-  cancellationTime: {
-    type: Date
+  notes: {
+    type: String
   },
-  cancelledBy: {
-    type: String,
-    enum: ['patient', 'doctor', 'staff']
-  },
-  notifyPatient: {
-    type: Boolean,
-    default: true
-  },
-  followUpRecommendation: {
-    recommended: {
-      type: Boolean,
-      default: false
-    },
-    timeframe: {
-      type: String,
-      enum: ['1_week', '2_weeks', '1_month', '3_months', '6_months', '1_year']
-    }
-  },
-  remindersSent: [{
-    type: {
-      type: String,
-      enum: ['email', 'sms', 'push']
-    },
-    sentAt: Date,
-    status: {
-      type: String,
-      enum: ['sent', 'delivered', 'failed']
-    }
-  }],
-  // For self-scheduling
-  selfScheduled: {
+  // Has the patient checked in?
+  checkedIn: {
     type: Boolean,
     default: false
   },
-  // Tracking changes
-  history: [{
-    action: {
-      type: String,
-      enum: ['created', 'rescheduled', 'cancelled', 'checked_in', 'completed', 'no_show']
-    },
-    timestamp: {
-      type: Date,
-      default: Date.now
-    },
-    performedBy: {
-      type: String,
-      enum: ['patient', 'doctor', 'staff', 'system']
-    },
-    previousValues: {
-      startTime: Date,
-      endTime: Date,
-      doctor: mongoose.Schema.Types.ObjectId,
-      status: String
-    },
-    notes: String
-  }]
+  // When did the patient check in?
+  checkInTime: {
+    type: Date
+  },
+  // Is this a recurring appointment?
+  isRecurring: {
+    type: Boolean,
+    default: false
+  },
+  // For recurring appointments
+  recurringPattern: {
+    type: {
+      frequency: {
+        type: String,
+        enum: ['daily', 'weekly', 'monthly']
+      },
+      interval: {
+        type: Number,
+        min: 1,
+        default: 1
+      },
+      daysOfWeek: [{
+        type: Number,
+        min: 0,
+        max: 6
+      }],
+      endsOn: {
+        type: Date
+      },
+      occurrences: {
+        type: Number,
+        min: 1
+      }
+    }
+  },
+  // Is this a virtual appointment?
+  isVirtual: {
+    type: Boolean,
+    default: false
+  },
+  // Virtual meeting details
+  virtualMeetingDetails: {
+    type: {
+      platform: {
+        type: String,
+        enum: ['zoom', 'teams', 'google-meet', 'other']
+      },
+      meetingId: {
+        type: String
+      },
+      meetingPassword: {
+        type: String
+      },
+      meetingLink: {
+        type: String
+      }
+    }
+  },
+  // Has the meeting link been sent to the patient?
+  meetingLinkSent: {
+    type: Boolean,
+    default: false
+  },
+  // Original appointment for rescheduled appointments
+  originalAppointment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment'
+  }
 }, baseSchema.baseOptions);
 
-// Indexes for efficient querying
-appointmentSchema.index({ patient: 1, startTime: -1 });
-appointmentSchema.index({ doctor: 1, startTime: -1 });
-appointmentSchema.index({ status: 1, startTime: 1 });
-appointmentSchema.index({ startTime: 1, endTime: 1 });
+// Calculate the actualEndTime (including buffer time)
+appointmentSchema.virtual('actualEndTime').get(function() {
+  if (!this.endTime) return null;
+  
+  const endTimeMs = new Date(this.endTime).getTime();
+  const bufferTimeMs = (this.bufferTime || 0) * 60 * 1000; // Convert minutes to milliseconds
+  
+  return new Date(endTimeMs + bufferTimeMs);
+});
 
-// Pre-save hook to add history entry
+// Pre-save hook to calculate the end time from the start time and duration
 appointmentSchema.pre('save', function(next) {
-  // Skip for new appointments
-  if (this.isNew) {
-    this.history.push({
-      action: 'created',
-      performedBy: this.selfScheduled ? 'patient' : 'staff',
-    });
-    return next();
+  if (this.startTime && this.duration) {
+    const startMs = new Date(this.startTime).getTime();
+    const durationMs = this.duration * 60 * 1000; // Convert minutes to milliseconds
+    this.endTime = new Date(startMs + durationMs);
   }
-  
-  // For existing appointments
-  if (this.isModified('status') || 
-      this.isModified('startTime') || 
-      this.isModified('endTime') ||
-      this.isModified('doctor')) {
-    
-    let action = 'rescheduled';
-    if (this.isModified('status')) {
-      if (this.status === 'cancelled') action = 'cancelled';
-      else if (this.status === 'checked_in') action = 'checked_in';
-      else if (this.status === 'completed') action = 'completed';
-      else if (this.status === 'no_show') action = 'no_show';
-    }
-    
-    const previousValues = {};
-    if (this._previousModifiedPaths.includes('startTime')) previousValues.startTime = this._oldModifiedPaths.startTime;
-    if (this._previousModifiedPaths.includes('endTime')) previousValues.endTime = this._oldModifiedPaths.endTime;
-    if (this._previousModifiedPaths.includes('doctor')) previousValues.doctor = this._oldModifiedPaths.doctor;
-    if (this._previousModifiedPaths.includes('status')) previousValues.status = this._oldModifiedPaths.status;
-    
-    this.history.push({
-      action,
-      // Ideally, this would be derived from the user making the change
-      performedBy: 'staff',
-      previousValues
-    });
-  }
-  
   next();
 });
 
-// Method to check for conflicts with doctor's schedule
-appointmentSchema.statics.checkDoctorAvailability = async function(doctorId, startTime, endTime, excludeAppointmentId = null) {
-  const query = {
-    doctor: doctorId,
-    status: 'scheduled',
-    $or: [
-      { // New appointment starts during an existing appointment
-        startTime: { $lte: startTime },
-        endTime: { $gt: startTime }
-      },
-      { // New appointment ends during an existing appointment
-        startTime: { $lt: endTime },
-        endTime: { $gte: endTime }
-      },
-      { // New appointment encompasses an existing appointment
-        startTime: { $gte: startTime },
-        endTime: { $lte: endTime }
-      }
-    ]
-  };
-  
-  // Exclude the current appointment if we're checking for reschedule conflicts
-  if (excludeAppointmentId) {
-    query._id = { $ne: excludeAppointmentId };
+// Static method to check if a time slot is available for a doctor
+appointmentSchema.statics.isTimeSlotAvailable = async function(doctorId, startTime, endTime, excludeAppointmentId = null) {
+  try {
+    const query = {
+      doctor: doctorId,
+      status: { $nin: ['cancelled', 'no-show'] },
+      $or: [
+        // New appointment starts during an existing appointment (including buffer time)
+        {
+          startTime: { $lt: endTime },
+          $expr: {
+            $gt: [
+              { $add: ["$endTime", { $multiply: ["$bufferTime", 60 * 1000] }] },
+              new Date(startTime).getTime()
+            ]
+          }
+        },
+        // New appointment ends during an existing appointment
+        {
+          startTime: { $lt: endTime },
+          endTime: { $gt: startTime }
+        }
+      ]
+    };
+
+    // If updating an existing appointment, exclude it from the check
+    if (excludeAppointmentId) {
+      query._id = { $ne: excludeAppointmentId };
+    }
+
+    const conflictingAppointments = await this.find(query);
+    return conflictingAppointments.length === 0;
+  } catch (error) {
+    logger.error('Error in isTimeSlotAvailable', { 
+      error: error.message,
+      doctorId,
+      startTime,
+      endTime,
+      excludeAppointmentId
+    });
+    throw error;
   }
-  
-  const conflictingAppointments = await this.find(query).exec();
-  return conflictingAppointments.length === 0;
 };
+
+// Ensure the model includes virtual properties when converted to JSON
+appointmentSchema.set('toJSON', { virtuals: true });
+appointmentSchema.set('toObject', { virtuals: true });
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 

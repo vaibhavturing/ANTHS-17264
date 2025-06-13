@@ -1,115 +1,108 @@
-// File: src/controllers/appointmentType.controller.js
 const appointmentTypeService = require('../services/appointmentType.service');
-const asyncHandler = require('../utils/async-handler.util');
 const { ResponseUtil } = require('../utils/response.util');
-const { ApiError } = require('../utils/errors');
+const asyncHandler = require('../utils/async-handler.util');
+const logger = require('../utils/logger');
 
 /**
- * Appointment Type Controller
- * Handles API requests related to appointment types
+ * Controller for appointment type operations
  */
 const appointmentTypeController = {
   /**
    * Create a new appointment type
+   * @route POST /api/appointment-types
    */
   createAppointmentType: asyncHandler(async (req, res) => {
-    const typeData = req.body;
-    
-    const appointmentType = await appointmentTypeService.createAppointmentType(typeData);
-    
-    return ResponseUtil.success(res, {
-      message: 'Appointment type created successfully',
-      appointmentType
-    }, 201);
+    const appointmentType = await appointmentTypeService.createAppointmentType(req.body);
+    return ResponseUtil.success(res, { appointmentType }, 201);
   }),
-  
+
   /**
-   * Update an appointment type
-   */
-  updateAppointmentType: asyncHandler(async (req, res) => {
-    const { typeId } = req.params;
-    const updateData = req.body;
-    
-    const appointmentType = await appointmentTypeService.updateAppointmentType(
-      typeId,
-      updateData
-    );
-    
-    return ResponseUtil.success(res, {
-      message: 'Appointment type updated successfully',
-      appointmentType
-    });
-  }),
-  
-  /**
-   * Get appointment type by ID
-   */
-  getAppointmentTypeById: asyncHandler(async (req, res) => {
-    const { typeId } = req.params;
-    
-    const appointmentType = await appointmentTypeService.getAppointmentTypeById(typeId);
-    
-    return ResponseUtil.success(res, { appointmentType });
-  }),
-  
-  /**
-   * Get all appointment types with optional filtering
+   * Get all appointment types
+   * @route GET /api/appointment-types
    */
   getAllAppointmentTypes: asyncHandler(async (req, res) => {
-    const filters = {
-      status: req.query.status,
-      department: req.query.department,
-      minDuration: req.query.minDuration ? Number(req.query.minDuration) : undefined,
-      maxDuration: req.query.maxDuration ? Number(req.query.maxDuration) : undefined,
-      isOnlineBookable: req.query.isOnlineBookable !== undefined ? 
-        req.query.isOnlineBookable === 'true' : undefined
-    };
+    const filter = {};
     
-    const appointmentTypes = await appointmentTypeService.getAllAppointmentTypes(filters);
+    // Apply filters if provided
+    if (req.query.isActive) {
+      filter.isActive = req.query.isActive === 'true';
+    }
     
-    return ResponseUtil.success(res, {
-      count: appointmentTypes.length,
-      appointmentTypes
-    });
+    if (req.query.isVirtual) {
+      filter.isVirtual = req.query.isVirtual === 'true';
+    }
+    
+    if (req.query.specialty) {
+      filter.specialties = req.query.specialty;
+    }
+    
+    const appointmentTypes = await appointmentTypeService.getAllAppointmentTypes(filter);
+    return ResponseUtil.success(res, { appointmentTypes });
   }),
-  
+
   /**
-   * Get appointment types for a department
+   * Get appointment type by ID
+   * @route GET /api/appointment-types/:id
    */
-  getAppointmentTypesByDepartment: asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
-    const activeOnly = req.query.activeOnly !== 'false';
+  getAppointmentTypeById: asyncHandler(async (req, res) => {
+    const appointmentType = await appointmentTypeService.getAppointmentTypeById(req.params.id);
+    return ResponseUtil.success(res, { appointmentType });
+  }),
+
+  /**
+   * Update appointment type
+   * @route PUT /api/appointment-types/:id
+   */
+  updateAppointmentType: asyncHandler(async (req, res) => {
+    const updatedAppointmentType = await appointmentTypeService.updateAppointmentType(
+      req.params.id,
+      req.body
+    );
+    return ResponseUtil.success(res, { appointmentType: updatedAppointmentType });
+  }),
+
+  /**
+   * Delete appointment type
+   * @route DELETE /api/appointment-types/:id
+   */
+  deleteAppointmentType: asyncHandler(async (req, res) => {
+    await appointmentTypeService.deleteAppointmentType(req.params.id);
+    return ResponseUtil.success(res, { message: 'Appointment type deleted successfully' });
+  }),
+
+  /**
+   * Get appointment types for a specific doctor
+   * @route GET /api/doctors/:doctorId/appointment-types
+   */
+  getAppointmentTypesForDoctor: asyncHandler(async (req, res) => {
+    const { doctorId } = req.params;
+    const activeOnly = req.query.activeOnly !== 'false'; // Default to true
     
-    const appointmentTypes = await appointmentTypeService.getAppointmentTypesByDepartment(
-      departmentId,
+    const appointmentTypes = await appointmentTypeService.getAppointmentTypesForDoctor(
+      doctorId,
       activeOnly
     );
     
-    return ResponseUtil.success(res, {
-      count: appointmentTypes.length,
-      appointmentTypes
-    });
+    return ResponseUtil.success(res, { appointmentTypes });
   }),
-  
+
   /**
-   * Toggle appointment type status (active/inactive)
+   * Update doctor-specific settings for an appointment type
+   * @route PUT /api/appointment-types/:id/doctor-settings/:doctorId
    */
-  toggleAppointmentTypeStatus: asyncHandler(async (req, res) => {
-    const { typeId } = req.params;
-    const { status } = req.body;
+  updateDoctorSettings: asyncHandler(async (req, res) => {
+    const { id, doctorId } = req.params;
+    const settings = req.body;
     
-    if (!status || !['active', 'inactive'].includes(status)) {
-      throw new ApiError('Valid status (active, inactive) is required', 400);
-    }
-    
-    const appointmentType = await appointmentTypeService.toggleAppointmentTypeStatus(
-      typeId,
-      status
+    const updatedAppointmentType = await appointmentTypeService.updateDoctorSettings(
+      id,
+      doctorId,
+      settings
     );
     
-    return ResponseUtil.success(res, {
-      message: `Appointment type status changed to ${status}`,
-      appointmentType
+    return ResponseUtil.success(res, { 
+      message: 'Doctor settings updated successfully',
+      appointmentType: updatedAppointmentType
     });
   })
 };

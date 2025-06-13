@@ -1,78 +1,95 @@
-// File: src/routes/appointmentType.routes.js (Fixed version)
 const express = require('express');
-const router = express.Router();
 const appointmentTypeController = require('../controllers/appointmentType.controller');
-const authMiddleware = require('../middleware/auth.middleware');
-const permissionMiddleware = require('../middleware/permission.middleware');
-const validateMiddleware = require('../middleware/validate.middleware');
+const { authMiddleware } = require('../middleware/auth.middleware');
+const { validateRequest } = require('../middleware/validate.middleware');
+const appointmentTypeValidator = require('../validators/appointmentType.validator');
 
-// FIXED: Create a minimal validator if not already defined
-// This is a temporary placeholder if your validator module isn't fully implemented
-const appointmentTypeValidator = {
-  createAppointmentType: [],
-  updateAppointmentType: [],
-  toggleStatus: []
-};
+const router = express.Router();
 
-// Try to import the real validator, but use the minimal one as fallback
-try {
-  const { appointmentTypeValidator: realValidator } = require('../validators/appointmentType.validator');
-  if (realValidator) {
-    Object.assign(appointmentTypeValidator, realValidator);
-  }
-} catch (error) {
-  console.warn('Warning: Using minimal appointment type validators. Real validator not available.');
-}
-
-// Create a new appointment type
+/**
+ * @route   POST /api/appointment-types
+ * @desc    Create a new appointment type
+ * @access  Admin
+ */
 router.post(
   '/',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('appointmentTypes', 'create'),
-  validateMiddleware(appointmentTypeValidator.createAppointmentType),
+  authMiddleware(['admin']),
+  validateRequest(appointmentTypeValidator.createAppointmentType),
   appointmentTypeController.createAppointmentType
 );
 
-// Update an appointment type
-router.put(
-  '/:typeId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('appointmentTypes', 'update'),
-  validateMiddleware(appointmentTypeValidator.updateAppointmentType),
-  appointmentTypeController.updateAppointmentType
-);
-
-// Get appointment type by ID
-router.get(
-  '/:typeId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('appointmentTypes', 'read'),
-  appointmentTypeController.getAppointmentTypeById
-);
-
-// Get all appointment types with optional filtering
+/**
+ * @route   GET /api/appointment-types
+ * @desc    Get all appointment types
+ * @access  All authenticated users
+ */
 router.get(
   '/',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('appointmentTypes', 'read'),
+  authMiddleware(),
   appointmentTypeController.getAllAppointmentTypes
 );
 
-// Get appointment types for a department
+/**
+ * @route   GET /api/appointment-types/:id
+ * @desc    Get appointment type by ID
+ * @access  All authenticated users
+ */
 router.get(
-  '/department/:departmentId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('appointmentTypes', 'read'),
-  appointmentTypeController.getAppointmentTypesByDepartment
+  '/:id',
+  authMiddleware(),
+  validateRequest(appointmentTypeValidator.idParam, 'params'),
+  appointmentTypeController.getAppointmentTypeById
 );
 
-// Toggle appointment type status (active/inactive)
-router.patch(
-  '/:typeId/status',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('appointmentTypes', 'update'),
-  validateMiddleware(appointmentTypeValidator.toggleStatus),
-  appointmentTypeController.toggleAppointmentTypeStatus
+/**
+ * @route   PUT /api/appointment-types/:id
+ * @desc    Update appointment type
+ * @access  Admin
+ */
+router.put(
+  '/:id',
+  authMiddleware(['admin']),
+  validateRequest(appointmentTypeValidator.idParam, 'params'),
+  validateRequest(appointmentTypeValidator.updateAppointmentType),
+  appointmentTypeController.updateAppointmentType
+);
+
+/**
+ * @route   DELETE /api/appointment-types/:id
+ * @desc    Delete appointment type
+ * @access  Admin
+ */
+router.delete(
+  '/:id',
+  authMiddleware(['admin']),
+  validateRequest(appointmentTypeValidator.idParam, 'params'),
+  appointmentTypeController.deleteAppointmentType
+);
+
+/**
+ * @route   PUT /api/appointment-types/:id/doctor-settings/:doctorId
+ * @desc    Update doctor-specific settings for an appointment type
+ * @access  Admin or the specific doctor
+ */
+router.put(
+  '/:id/doctor-settings/:doctorId',
+  authMiddleware(), // Further permission checks in the controller
+  validateRequest(appointmentTypeValidator.idParam, 'params'),
+  validateRequest(appointmentTypeValidator.doctorIdParam, 'params'),
+  validateRequest(appointmentTypeValidator.updateDoctorSettings),
+  appointmentTypeController.updateDoctorSettings
+);
+
+/**
+ * @route   GET /api/doctors/:doctorId/appointment-types
+ * @desc    Get appointment types for a specific doctor
+ * @access  All authenticated users
+ */
+router.get(
+  '/doctor/:doctorId',
+  authMiddleware(),
+  validateRequest(appointmentTypeValidator.doctorIdParam, 'params'),
+  appointmentTypeController.getAppointmentTypesForDoctor
 );
 
 module.exports = router;
