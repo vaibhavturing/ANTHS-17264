@@ -1,79 +1,95 @@
-/**
- * Utilities for date operations
- */
+const moment = require('moment');
 
 /**
- * Format a date to a string
- * @param {Date} date - Date to format
- * @param {string} format - Format string (default: YYYY-MM-DD)
- * @returns {string} Formatted date string
+ * Utility functions for date operations in the Healthcare Management Application
  */
-const formatDate = (date, format = 'YYYY-MM-DD') => {
-  if (!date) return null;
+const dateUtil = {
+  /**
+   * Parse a date string in various formats
+   * @param {string} dateStr - Date string to parse
+   * @returns {Date|null} Parsed date or null if invalid
+   */
+  parseDate: (dateStr) => {
+    if (!dateStr) return null;
+    
+    // Try parsing with moment which can handle multiple formats
+    const parsedDate = moment(dateStr);
+    
+    // Check if valid
+    if (!parsedDate.isValid()) {
+      return null;
+    }
+    
+    return parsedDate.toDate();
+  },
   
-  const d = new Date(date);
+  /**
+   * Format a date to the application's standard format (YYYY-MM-DD)
+   * @param {Date|string} date - Date to format
+   * @returns {string} Formatted date string
+   */
+  formatDate: (date) => {
+    if (!date) return '';
+    return moment(date).format('YYYY-MM-DD');
+  },
   
-  if (isNaN(d.getTime())) return null;
+  /**
+   * Format a time to the application's standard format (HH:mm)
+   * @param {Date|string} date - Date/time to format
+   * @returns {string} Formatted time string
+   */
+  formatTime: (date) => {
+    if (!date) return '';
+    return moment(date).format('HH:mm');
+  },
   
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
+  /**
+   * Format a datetime to the application's standard format (YYYY-MM-DD HH:mm)
+   * @param {Date|string} date - Datetime to format
+   * @returns {string} Formatted datetime string
+   */
+  formatDateTime: (date) => {
+    if (!date) return '';
+    return moment(date).format('YYYY-MM-DD HH:mm');
+  },
   
-  return format
-    .replace('YYYY', year)
-    .replace('MM', month)
-    .replace('DD', day)
-    .replace('HH', hours)
-    .replace('mm', minutes)
-    .replace('ss', seconds);
-};
-
-/**
- * Calculate the difference in days between two dates
- * @param {Date} date1 - First date
- * @param {Date} date2 - Second date
- * @returns {number} Difference in days
- */
-const dateDiffInDays = (date1, date2) => {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
+  /**
+   * Get start of day for a given date
+   * @param {Date|string} date - Date to use
+   * @returns {Date} Date object set to start of day
+   */
+  getStartOfDay: (date) => {
+    return moment(date).startOf('day').toDate();
+  },
   
-  // Convert to UTC to avoid timezone issues
-  const utcDate1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
-  const utcDate2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
+  /**
+   * Get end of day for a given date
+   * @param {Date|string} date - Date to use
+   * @returns {Date} Date object set to end of day
+   */
+  getEndOfDay: (date) => {
+    return moment(date).endOf('day').toDate();
+  },
   
-  // Calculate difference in milliseconds
-  const diff = Math.abs(utcDate2 - utcDate1);
+  /**
+   * Check if a date is in the future
+   * @param {Date|string} date - Date to check
+   * @returns {boolean} True if date is in the future
+   */
+  isFutureDate: (date) => {
+    return moment(date).isAfter(moment());
+  },
   
-  // Convert to days
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
-};
-
-/**
- * Calculate age from date of birth
- * @param {Date} dateOfBirth - Date of birth
- * @returns {number} Age in years
- */
-const calculateAge = (dateOfBirth) => {
-  const dob = new Date(dateOfBirth);
-  const today = new Date();
-  
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  
-  // Adjust age based on month and day
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age--;
+  /**
+   * Add duration to a date
+   * @param {Date|string} date - Starting date
+   * @param {number} amount - Amount to add
+   * @param {string} unit - Unit (minutes, hours, days, weeks, months)
+   * @returns {Date} New date with duration added
+   */
+  addDuration: (date, amount, unit = 'minutes') => {
+    return moment(date).add(amount, unit).toDate();
   }
-  
-  return age;
 };
 
-module.exports = {
-  formatDate,
-  dateDiffInDays,
-  calculateAge
-};
+module.exports = dateUtil;

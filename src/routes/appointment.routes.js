@@ -26,6 +26,12 @@ router.get(
 );
 
 
+// Get available time slots for a doctor
+router.get('/available-slots', 
+  authMiddleware.protect, 
+  appointmentController.getAvailableTimeSlots
+);
+
 
 // GET appointment by ID
 router.get(
