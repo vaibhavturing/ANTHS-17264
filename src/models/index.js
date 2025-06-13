@@ -4,11 +4,10 @@ const Patient = require('./patient.model');
 const Doctor = require('./doctor.model');
 const Appointment = require('./appointment.model');
 const MedicalRecord = require('./medicalRecord.model');
-const Permission = require('./permission.model');
-const Role = require('./role.model');
+// const Permission = require('./permission.model');
+// const Role = require('./role.model');
 const VerificationToken = require('./verification-token.model');
-const Patient = require('./patient.model');
-const  RefreshToken = require('./refresh-token.model');
+const RefreshToken = require('./refreshToken.model');
 const Session = require('./session.model');
 const TokenBlacklist = require('./token-blacklist.model');
 const ActivityLog = require('./activity-log.model');
@@ -33,11 +32,9 @@ module.exports = {
   Appointment,
   TokenBlacklist,
   MedicalRecord,
-  Permission,
   Session,
   RefreshToken,
   notification,
-  Role,
   communication,
   ActivityLog,
   patientProfileVersion,

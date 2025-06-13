@@ -1,208 +1,11 @@
-// src/services/notification.service.js
-
 const { Notification } = require('../models/notification.model');
 const logger = require('../utils/logger');
-const mongoose = require('mongoose');
 const { NotFoundError } = require('../utils/errors');
 
 /**
- * Notification Service
- * Handles operations related to in-app notifications
+ * Service for managing notifications
  */
 const notificationService = {
-  /**
-   * Get unread notifications count for a user
-   * @param {string} userId - User ID
-   * @returns {Promise<number>} Unread notification count
-   */
-  getUnreadCount: async (userId) => {
-    try {
-      return await Notification.getUnreadCount(userId);
-    } catch (error) {
-      logger.error('Error getting unread notification count', {
-        error: error.message,
-        userId
-      });
-      throw error;
-    }
-  },
-  
-  /**
-   * Get latest notifications for a user
-   * @param {string} userId - User ID
-   * @param {number} limit - Maximum number of notifications to return
-   * @param {boolean} includeRead - Whether to include read notifications
-   * @returns {Promise<Array>} Notifications list
-   */
-  getLatestNotifications: async (userId, limit = 10, includeRead = false) => {
-    try {
-      return await Notification.getLatestNotifications(userId, limit, includeRead);
-    } catch (error) {
-      logger.error('Error getting latest notifications', {
-        error: error.message,
-        userId
-      });
-      throw error;
-    }
-  },
-  
-  /**
-   * Get all notifications for a user with pagination
-   * @param {string} userId - User ID
-   * @param {Object} options - Pagination and filter options
-   * @returns {Promise<Object>} Paginated notifications
-   */
-  getUserNotifications: async (userId, options = {}) => {
-    try {
-      const {
-        page = 1,
-        limit = 20,
-        includeRead = true,
-        type,
-        startDate,
-        endDate
-      } = options;
-      
-      // Build query
-      let query = { recipient: userId };
-      
-      // Filter by read status
-      if (!includeRead) {
-        query.isRead = false;
-      }
-      
-      // Filter by type
-      if (type) {
-        query.type = type;
-      }
-      
-      // Filter by date range
-      if (startDate || endDate) {
-        query.createdAt = {};
-        
-        if (startDate) {
-          query.createdAt.$gte = new Date(startDate);
-        }
-        
-        if (endDate) {
-          query.createdAt.$lte = new Date(endDate);
-        }
-      }
-      
-      // Filter out expired notifications
-      query = {
-        ...query,
-        $or: [
-          { expiresAt: { $exists: false } },
-          { expiresAt: { $gt: new Date() } }
-        ]
-      };
-      
-      // Count total notifications
-      const total = await Notification.countDocuments(query);
-      
-      // Get paginated notifications
-      const notifications = await Notification.find(query)
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
-      
-      return {
-        total,
-        page,
-        pages: Math.ceil(total / limit),
-        notifications
-      };
-    } catch (error) {
-      logger.error('Error getting user notifications', {
-        error: error.message,
-        userId
-      });
-      throw error;
-    }
-  },
-  
-  /**
-   * Mark a notification as read
-   * @param {string} notificationId - Notification ID
-   * @param {string} userId - User ID
-   * @returns {Promise<Object>} Updated notification
-   */
-  markNotificationAsRead: async (notificationId, userId) => {
-    try {
-      // Find notification and verify ownership
-      const notification = await Notification.findOne({
-        _id: notificationId,
-        recipient: userId
-      });
-      
-      if (!notification) {
-        throw new NotFoundError('Notification not found or not accessible');
-      }
-      
-      // Mark as read if not already
-      if (!notification.isRead) {
-        notification.isRead = true;
-        notification.readAt = new Date();
-        await notification.save();
-        
-        logger.info(`Notification marked as read`, {
-          notificationId,
-          userId
-        });
-      }
-      
-      return notification;
-    } catch (error) {
-      logger.error('Error marking notification as read', {
-        error: error.message,
-        notificationId,
-        userId
-      });
-      throw error;
-    }
-  },
-  
-  /**
-   * Mark all notifications as read for a user
-   * @param {string} userId - User ID
-   * @returns {Promise<Object>} Result with count of updated notifications
-   */
-  markAllNotificationsAsRead: async (userId) => {
-    try {
-      const now = new Date();
-      
-      // Update all unread notifications
-      const result = await Notification.updateMany(
-        { 
-          recipient: userId,
-          isRead: false
-        },
-        {
-          $set: {
-            isRead: true,
-            readAt: now
-          }
-        }
-      );
-      
-      logger.info(`Marked all notifications as read for user ${userId}`, {
-        updatedCount: result.nModified || result.modifiedCount
-      });
-      
-      return {
-        success: true,
-        count: result.nModified || result.modifiedCount
-      };
-    } catch (error) {
-      logger.error('Error marking all notifications as read', {
-        error: error.message,
-        userId
-      });
-      throw error;
-    }
-  },
-  
   /**
    * Create a new notification
    * @param {Object} notificationData - Notification data
@@ -213,53 +16,179 @@ const notificationService = {
       const notification = new Notification(notificationData);
       await notification.save();
       
-      logger.info(`Notification created for user ${notificationData.recipient}`, {
-        notificationId: notification._id,
-        title: notification.title,
-        type: notification.type
+      logger.info('Created notification', { 
+        notificationId: notification._id, 
+        type: notification.type 
       });
       
       return notification;
     } catch (error) {
-      logger.error('Error creating notification', {
+      logger.error('Error creating notification', { 
         error: error.message,
-        userId: notificationData?.recipient
+        notificationData 
       });
       throw error;
     }
   },
-  
+
+  /**
+   * Get notifications for a user
+   * @param {string} userId - User ID
+   * @param {Object} filters - Optional filters
+   * @returns {Promise<Array>} Notifications
+   */
+  getUserNotifications: async (userId, filters = {}) => {
+    try {
+      // Build query to find notifications that target this user
+      // either directly or by role
+      const query = {
+        $or: [
+          { 'recipients.userIds': userId },
+          { 'recipients.roles': { $in: filters.userRoles || [] } }
+        ]
+      };
+      
+      // Apply read/unread filter if provided
+      if (filters.unreadOnly) {
+        query.read = { $ne: userId };
+      }
+      
+      // Apply type filter if provided
+      if (filters.type) {
+        query.type = filters.type;
+      }
+      
+      // Apply date range filter if provided
+      if (filters.startDate) {
+        query.createdAt = { $gte: new Date(filters.startDate) };
+      }
+      
+      if (filters.endDate) {
+        if (!query.createdAt) query.createdAt = {};
+        query.createdAt.$lte = new Date(filters.endDate);
+      }
+      
+      // Apply priority filter if provided
+      if (filters.priority) {
+        query.priority = filters.priority;
+      }
+      
+      // Get notifications with pagination
+      const page = parseInt(filters.page) || 1;
+      const limit = parseInt(filters.limit) || 20;
+      const skip = (page - 1) * limit;
+      
+      const notifications = await Notification.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+      
+      const total = await Notification.countDocuments(query);
+      
+      return {
+        notifications,
+        pagination: {
+          page,
+          limit,
+          totalItems: total,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    } catch (error) {
+      logger.error('Error getting user notifications', { 
+        error: error.message,
+        userId,
+        filters 
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Mark a notification as read for a user
+   * @param {string} notificationId - Notification ID
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} Updated notification
+   */
+  markAsRead: async (notificationId, userId) => {
+    try {
+      const notification = await Notification.findById(notificationId);
+      
+      if (!notification) {
+        throw new NotFoundError('Notification not found');
+      }
+      
+      // Check if user has already read this notification
+      if (!notification.read.includes(userId)) {
+        notification.read.push(userId);
+        await notification.save();
+      }
+      
+      return notification;
+    } catch (error) {
+      logger.error('Error marking notification as read', { 
+        error: error.message,
+        notificationId,
+        userId 
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Mark all notifications as read for a user
+   * @param {string} userId - User ID
+   * @param {Array} userRoles - User roles
+   * @returns {Promise<Object>} Result
+   */
+  markAllAsRead: async (userId, userRoles = []) => {
+    try {
+      // Find all unread notifications for this user
+      const query = {
+        read: { $ne: userId },
+        $or: [
+          { 'recipients.userIds': userId },
+          { 'recipients.roles': { $in: userRoles } }
+        ]
+      };
+      
+      // Update all matching notifications
+      const result = await Notification.updateMany(
+        query,
+        { $addToSet: { read: userId } }
+      );
+      
+      return { 
+        success: true, 
+        message: `Marked ${result.nModified} notifications as read` 
+      };
+    } catch (error) {
+      logger.error('Error marking all notifications as read', { 
+        error: error.message,
+        userId 
+      });
+      throw error;
+    }
+  },
+
   /**
    * Delete a notification
    * @param {string} notificationId - Notification ID
-   * @param {string} userId - User ID
-   * @returns {Promise<Object>} Result
+   * @returns {Promise<Object>} Deletion result
    */
-  deleteNotification: async (notificationId, userId) => {
+  deleteNotification: async (notificationId) => {
     try {
-      // Find notification and verify ownership
-      const notification = await Notification.findOne({
-        _id: notificationId,
-        recipient: userId
-      });
+      const result = await Notification.deleteOne({ _id: notificationId });
       
-      if (!notification) {
-        throw new NotFoundError('Notification not found or not accessible');
+      if (result.deletedCount === 0) {
+        throw new NotFoundError('Notification not found');
       }
       
-      await notification.remove();
-      
-      logger.info(`Notification deleted`, {
-        notificationId,
-        userId
-      });
-      
-      return { success: true };
+      return { success: true, message: 'Notification deleted successfully' };
     } catch (error) {
-      logger.error('Error deleting notification', {
+      logger.error('Error deleting notification', { 
         error: error.message,
-        notificationId,
-        userId
+        notificationId 
       });
       throw error;
     }

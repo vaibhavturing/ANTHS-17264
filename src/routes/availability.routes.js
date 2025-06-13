@@ -1,134 +1,212 @@
-// File: src/routes/availability.routes.js (Fixed version)
 const express = require('express');
-const router = express.Router();
 const availabilityController = require('../controllers/availability.controller');
-const authMiddleware = require('../middleware/auth.middleware');
-const permissionMiddleware = require('../middleware/permission.middleware');
-const validateMiddleware = require('../middleware/validate.middleware');
+const { authMiddleware } = require('../middleware/auth.middleware');
+const { validateRequest } = require('../middleware/validate.middleware');
+const availabilityValidator = require('../validators/availability.validator');
 
-// FIXED: Create a minimal validator if not already defined
-// This is a temporary placeholder if your validator module isn't fully implemented
-const availabilityValidator = {
-  createAvailability: [],
-  updateAvailability: [],
-  createLeaveRequest: [],
-  updateLeaveStatus: [],
-  scheduleBreak: [],
-  updateBreak: [],
-  checkAvailability: []
-};
+const router = express.Router();
 
-// Try to import the real validator, but use the minimal one as fallback
-try {
-  const { availabilityValidator: realValidator } = require('../validators/availability.validator');
-  if (realValidator) {
-    Object.assign(availabilityValidator, realValidator);
-  }
-} catch (error) {
-  console.warn('Warning: Using minimal availability validators. Real validator not available.');
-}
-
-// Create a doctor's availability configuration
-router.post(
-  '/',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('availability', 'create'),
-  validateMiddleware(availabilityValidator.createAvailability),
-  availabilityController.createAvailability
-);
-
-// Update a doctor's availability configuration
-router.put(
-  '/:availabilityId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('availability', 'update'),
-  validateMiddleware(availabilityValidator.updateAvailability),
-  availabilityController.updateAvailability
-);
-
-// Create a new leave request
-router.post(
-  '/leave',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('leave', 'create'),
-  validateMiddleware(availabilityValidator.createLeaveRequest),
-  availabilityController.createLeaveRequest
-);
-
-// Update a leave request status
-router.put(
-  '/leave/:leaveId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('leave', 'update'),
-  validateMiddleware(availabilityValidator.updateLeaveStatus),
-  availabilityController.updateLeaveStatus
-);
-
-// Get all leave requests for a doctor
+// Doctor availability routes
+/**
+ * @route   GET /api/doctors/:doctorId/availability
+ * @desc    Get doctor availability
+ * @access  Authenticated
+ */
 router.get(
-  '/leave/doctor/:doctorId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('leave', 'read'),
+  '/doctors/:doctorId/availability',
+  authMiddleware(),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  availabilityController.getDoctorAvailability
+);
+
+/**
+ * @route   PUT /api/doctors/:doctorId/availability/working-hours
+ * @desc    Update doctor working hours
+ * @access  Admin, Doctor self
+ */
+router.put(
+  '/doctors/:doctorId/availability/working-hours',
+  authMiddleware(['admin', 'doctor']),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  validateRequest(availabilityValidator.updateWorkingHours),
+  availabilityController.updateWorkingHours
+);
+
+/**
+ * @route   POST /api/doctors/:doctorId/availability/special-dates
+ * @desc    Add or update a special date
+ * @access  Admin, Doctor self
+ */
+router.post(
+  '/doctors/:doctorId/availability/special-dates',
+  authMiddleware(['admin', 'doctor']),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  validateRequest(availabilityValidator.addSpecialDate),
+  availabilityController.addSpecialDate
+);
+
+/**
+ * @route   DELETE /api/doctors/:doctorId/availability/special-dates/:specialDateId
+ * @desc    Remove a special date
+ * @access  Admin, Doctor self
+ */
+router.delete(
+  '/doctors/:doctorId/availability/special-dates/:specialDateId',
+  authMiddleware(['admin', 'doctor']),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  validateRequest(availabilityValidator.specialDateIdParam, 'params'),
+  availabilityController.removeSpecialDate
+);
+
+// Leave routes
+/**
+ * @route   POST /api/doctors/:doctorId/leaves
+ * @desc    Create a leave request
+ * @access  Admin, Doctor self
+ */
+router.post(
+  '/doctors/:doctorId/leaves',
+  authMiddleware(['admin', 'doctor']),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  validateRequest(availabilityValidator.createLeave),
+  availabilityController.createLeave
+);
+
+/**
+ * @route   GET /api/doctors/:doctorId/leaves
+ * @desc    Get all leaves for a doctor
+ * @access  Admin, Doctor self
+ */
+router.get(
+  '/doctors/:doctorId/leaves',
+  authMiddleware(['admin', 'doctor']),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
   availabilityController.getDoctorLeaves
 );
 
-// Get my leave requests (for logged-in doctor)
+/**
+ * @route   GET /api/leaves/:leaveId
+ * @desc    Get leave by ID
+ * @access  Admin, Doctor related to leave
+ */
 router.get(
-  '/leave/me',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('leave', 'read'),
-  availabilityController.getDoctorLeaves
+  '/leaves/:leaveId',
+  authMiddleware(),
+  validateRequest(availabilityValidator.leaveIdParam, 'params'),
+  availabilityController.getLeaveById
 );
 
-// Schedule a break for a doctor
-router.post(
-  '/break',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('break', 'create'),
-  validateMiddleware(availabilityValidator.scheduleBreak),
-  availabilityController.scheduleBreak
-);
-
-// Update a scheduled break
+/**
+ * @route   PUT /api/leaves/:leaveId
+ * @desc    Update leave request
+ * @access  Admin, Doctor related to leave (with restrictions)
+ */
 router.put(
-  '/break/:breakId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('break', 'update'),
-  validateMiddleware(availabilityValidator.updateBreak),
-  availabilityController.updateBreak
+  '/leaves/:leaveId',
+  authMiddleware(),
+  validateRequest(availabilityValidator.leaveIdParam, 'params'),
+  validateRequest(availabilityValidator.updateLeave),
+  availabilityController.updateLeave
 );
 
-// Get all breaks for a doctor by date range
-router.get(
-  '/break/doctor/:doctorId',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('break', 'read'),
-  availabilityController.getDoctorBreaks
+/**
+ * @route   DELETE /api/leaves/:leaveId
+ * @desc    Delete leave request
+ * @access  Admin, Doctor related to leave (only pending/cancelled)
+ */
+router.delete(
+  '/leaves/:leaveId',
+  authMiddleware(),
+  validateRequest(availabilityValidator.leaveIdParam, 'params'),
+  availabilityController.deleteLeave
 );
 
-// Get my breaks (for logged-in doctor)
-router.get(
-  '/break/me',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('break', 'read'),
-  availabilityController.getDoctorBreaks
-);
-
-// Get doctor availability information for a date
-router.get(
-  '/doctor/:doctorId/date',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('availability', 'read'),
-  availabilityController.getDoctorAvailabilityForDate
-);
-
-// Check doctor availability for a specific time slot
+/**
+ * @route   POST /api/leaves/:leaveId/process-appointments
+ * @desc    Process affected appointments
+ * @access  Admin only
+ */
 router.post(
-  '/check',
-  authMiddleware.authenticateUser,
-  permissionMiddleware.checkPermission('availability', 'read'),
-  validateMiddleware(availabilityValidator.checkAvailability),
+  '/leaves/:leaveId/process-appointments',
+  authMiddleware(['admin']),
+  validateRequest(availabilityValidator.leaveIdParam, 'params'),
+  availabilityController.processAffectedAppointments
+);
+
+// Break time routes
+/**
+ * @route   POST /api/doctors/:doctorId/breaks
+ * @desc    Create a break time
+ * @access  Admin, Doctor self
+ */
+router.post(
+  '/doctors/:doctorId/breaks',
+  authMiddleware(['admin', 'doctor']),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  validateRequest(availabilityValidator.createBreakTime),
+  availabilityController.createBreakTime
+);
+
+/**
+ * @route   GET /api/doctors/:doctorId/breaks
+ * @desc    Get all break times for a doctor
+ * @access  Authenticated
+ */
+router.get(
+  '/doctors/:doctorId/breaks',
+  authMiddleware(),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  availabilityController.getDoctorBreakTimes
+);
+
+/**
+ * @route   PUT /api/breaks/:breakTimeId
+ * @desc    Update break time
+ * @access  Admin, Doctor related to break
+ */
+router.put(
+  '/breaks/:breakTimeId',
+  authMiddleware(),
+  validateRequest(availabilityValidator.breakTimeIdParam, 'params'),
+  validateRequest(availabilityValidator, 'updateBreakTime'),
+  availabilityController.updateBreakTime
+);
+
+/**
+ * @route   DELETE /api/breaks/:breakTimeId
+ * @desc    Delete break time
+ * @access  Admin, Doctor related to break
+ */
+router.delete(
+  '/breaks/:breakTimeId',
+  authMiddleware(),
+  validateRequest(availabilityValidator.breakTimeIdParam, 'params'),
+  availabilityController.deleteBreakTime
+);
+
+// Availability checking and calendar routes
+/**
+ * @route   GET /api/doctors/:doctorId/check-availability
+ * @desc    Check if a doctor is available
+ * @access  Authenticated
+ */
+router.get(
+  '/doctors/:doctorId/check-availability',
+  authMiddleware(),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
   availabilityController.checkDoctorAvailability
+);
+
+/**
+ * @route   GET /api/doctors/:doctorId/calendar
+ * @desc    Get calendar events for a doctor
+ * @access  Authenticated
+ */
+router.get(
+  '/doctors/:doctorId/calendar',
+  authMiddleware(),
+  validateRequest(availabilityValidator.doctorIdParam, 'params'),
+  availabilityController.getDoctorCalendar
 );
 
 module.exports = router;

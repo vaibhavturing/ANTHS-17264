@@ -1,4 +1,6 @@
 const { Doctor, Appointment, AppointmentType } = require('../models');
+const { Leave } = require('../models/availability.model');
+const availabilityService = require('./availability.service');
 const logger = require('../utils/logger');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
@@ -46,9 +48,25 @@ const scheduleService = {
       const durationMs = duration * 60 * 1000; // Convert minutes to milliseconds
       const endTime = new Date(startMs + durationMs);
 
-      // Check if the doctor is available at that time
-      // This would involve checking the doctor's schedule, off-hours, breaks, etc.
-      // For this implementation, we'll just check against existing appointments
+      // NEW: Check for leave/vacation during this time
+      // Convert times to HH:MM format for availability checking
+      const timeSlotDate = new Date(startTime); // Date part only
+      const startTimeStr = startTime.getHours().toString().padStart(2, '0') + ':' + 
+                          startTime.getMinutes().toString().padStart(2, '0');
+      const endTimeStr = endTime.getHours().toString().padStart(2, '0') + ':' + 
+                        endTime.getMinutes().toString().padStart(2, '0');
+      
+      // Check doctor's availability (including leave, breaks, working hours)
+      const isAvailableThroughCalendar = await availabilityService.isDoctorAvailable(
+        doctorId,
+        timeSlotDate,
+        startTimeStr,
+        endTimeStr
+      );
+      
+      if (!isAvailableThroughCalendar) {
+        return false; // Doctor is not available due to leave, break, or non-working hours
+      }
 
       // Check for conflicting appointments
       const isAvailable = await Appointment.isTimeSlotAvailable(
@@ -100,26 +118,59 @@ const scheduleService = {
       const totalDuration = duration + bufferTime;
 
       // Start with the doctor's working hours for that day
-      // For simplicity, we'll use a static 9am-5pm schedule
-      // In a real implementation, this would come from the doctor's schedule record
+      // Instead of hardcoding, fetch from availability service
+      const availability = await availabilityService.getDoctorAvailability(doctorId);
+      
+      // Use the date to determine day of week
       const dayOfWeek = new Date(date).getDay(); // 0 = Sunday, 1 = Monday, etc.
       
-      // Skip if the doctor doesn't work on this day
-      // This is simplified - in a real app we'd check the doctor's actual schedule
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        return []; // Doctor doesn't work on weekends in this example
-      }
-
-      // Get the doctor's schedule for this day
-      const startHour = 9; // 9am
-      const endHour = 17; // 5pm
+      // Get working hours for this day
+      const workingDay = availability.workingHours.find(wh => wh.dayOfWeek === dayOfWeek);
       
-      // Set the day's start and end times
+      // Check if this is a special date
+      const dateStr = new Date(date).toISOString().split('T')[0];
+      const specialDate = availability.specialDates.find(
+        sd => new Date(sd.date).toISOString().split('T')[0] === dateStr
+      );
+      
+      // If it's not a working day or it's a special non-working day, return empty array
+      if ((specialDate && !specialDate.isWorking) || (!specialDate && (!workingDay || !workingDay.isWorking))) {
+        return []; // No available slots on non-working days
+      }
+      
+      // Set working hours based on special date or regular schedule
+      let startTimeStr, endTimeStr;
+      
+      if (specialDate && specialDate.isWorking) {
+        startTimeStr = specialDate.startTime;
+        endTimeStr = specialDate.endTime;
+      } else {
+        startTimeStr = workingDay.startTime;
+        endTimeStr = workingDay.endTime;
+      }
+      
+      // Parse working hours into Date objects for the specified date
+      const startTimeParts = startTimeStr.split(':');
+      const endTimeParts = endTimeStr.split(':');
+      
       const startOfDay = new Date(date);
-      startOfDay.setHours(startHour, 0, 0, 0);
+      startOfDay.setHours(parseInt(startTimeParts[0]), parseInt(startTimeParts[1]), 0, 0);
       
       const endOfDay = new Date(date);
-      endOfDay.setHours(endHour, 0, 0, 0);
+      endOfDay.setHours(parseInt(endTimeParts[0]), parseInt(endTimeParts[1]), 0, 0);
+
+      // NEW: Check if doctor is on leave for this day
+      const leaves = await Leave.find({
+        doctorId,
+        status: 'approved',
+        startDate: { $lte: new Date(date) },
+        endDate: { $gte: new Date(date) }
+      });
+      
+      // If there's an all-day leave, return empty array
+      if (leaves.some(leave => leave.allDay)) {
+        return []; // Doctor is on leave all day
+      }
 
       // Get all existing appointments for this doctor on this day
       const existingAppointments = await Appointment.find({
@@ -142,21 +193,37 @@ const scheduleService = {
           break;
         }
 
-        // Check if this time slot conflicts with any existing appointments
-        const slotAvailable = await scheduleService.checkTimeSlotAvailability(
-          doctorId, 
-          currentTime, 
-          duration,
-          appointmentTypeId
+        // Format times for availability checking
+        const slotTimeStr = currentTime.getHours().toString().padStart(2, '0') + ':' + 
+                           currentTime.getMinutes().toString().padStart(2, '0');
+        const slotEndTimeStr = appointmentEndTime.getHours().toString().padStart(2, '0') + ':' + 
+                             appointmentEndTime.getMinutes().toString().padStart(2, '0');
+                            
+        // Check doctor's availability at this specific time (leaves, breaks)
+        const isAvailable = await availabilityService.isDoctorAvailable(
+          doctorId,
+          new Date(date),
+          slotTimeStr,
+          slotEndTimeStr
         );
         
-        if (slotAvailable) {
-          timeSlots.push({
-            startTime: new Date(currentTime),
-            endTime: appointmentEndTime,
-            duration: duration,
-            bufferTime: bufferTime
-          });
+        // If the doctor is available according to calendar, check for appointment conflicts
+        if (isAvailable) {
+          // Check for conflicting appointments
+          const hasNoConflict = await Appointment.isTimeSlotAvailable(
+            doctorId,
+            currentTime,
+            appointmentEndTime
+          );
+          
+          if (hasNoConflict) {
+            timeSlots.push({
+              startTime: new Date(currentTime),
+              endTime: appointmentEndTime,
+              duration: duration,
+              bufferTime: bufferTime
+            });
+          }
         }
         
         // Move to the next time slot (15 min increments as standard interval)

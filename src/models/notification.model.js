@@ -1,16 +1,23 @@
-// src/models/notification.model.js
-
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
-const { COMMUNICATION_TYPES } = require('./communication.model');
 
-// Schema for in-app notifications
+/**
+ * Notification Schema
+ * For system notifications like appointment reminders, doctor leave notifications, etc.
+ */
 const notificationSchema = new mongoose.Schema({
-  recipient: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+  type: {
+    type: String,
     required: true,
-    index: true
+    enum: [
+      'appointment_reminder',
+      'appointment_update',
+      'doctor_leave',
+      'medical_record_update',
+      'test_result',
+      'prescription_renewal',
+      'general'
+    ]
   },
   title: {
     type: String,
@@ -19,83 +26,65 @@ const notificationSchema = new mongoose.Schema({
   },
   message: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
-  type: {
-    type: String,
-    enum: Object.values(COMMUNICATION_TYPES),
-    default: COMMUNICATION_TYPES.GENERAL
+  data: {
+    type: mongoose.Schema.Types.Mixed
   },
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high', 'urgent'],
+    enum: ['low', 'medium', 'high'],
     default: 'medium'
   },
-  isRead: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
-  readAt: Date,
-  actionLink: String,
-  relatedTo: {
-    model: {
+  recipients: {
+    roles: [{
       type: String,
-      enum: ['Appointment', 'MedicalRecord', 'Prescription', 'Communication']
-    },
-    id: {
+      enum: ['admin', 'doctor', 'nurse', 'patient', 'receptionist']
+    }],
+    userIds: [{
       type: mongoose.Schema.Types.ObjectId,
-      refPath: 'relatedTo.model'
+      ref: 'User'
+    }]
+  },
+  read: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  actions: [{
+    name: {
+      type: String,
+      required: true
+    },
+    link: {
+      type: String,
+      required: true
     }
-  },
-  icon: {
-    type: String,
-    default: 'notification'
-  },
-  expiresAt: Date
+  }]
 }, baseSchema.baseOptions);
 
-// Add method to mark notification as read
-notificationSchema.methods.markAsRead = function() {
-  this.isRead = true;
-  this.readAt = new Date();
-  return this.save();
-};
+// Virtual for isRead
+notificationSchema.virtual('isRead').get(function(userId) {
+  return this.read ? this.read.includes(userId) : false;
+});
 
-// Static method to get unread notifications count for a user
-notificationSchema.statics.getUnreadCount = function(userId) {
-  return this.countDocuments({ 
-    recipient: userId,
-    isRead: false,
+// Virtual for unread count
+notificationSchema.statics.getUnreadCount = async function(userId, userRoles = []) {
+  const query = {
+    read: { $ne: userId },
     $or: [
-      { expiresAt: { $exists: false } },
-      { expiresAt: { $gt: new Date() } }
-    ]
-  });
-};
-
-// Static method to get latest notifications for a user
-notificationSchema.statics.getLatestNotifications = function(userId, limit = 10, includeRead = false) {
-  let query = { 
-    recipient: userId,
-    $or: [
-      { expiresAt: { $exists: false } },
-      { expiresAt: { $gt: new Date() } }
+      { 'recipients.userIds': userId },
+      { 'recipients.roles': { $in: userRoles } }
     ]
   };
   
-  if (!includeRead) {
-    query.isRead = false;
-  }
-  
-  return this.find(query)
-    .sort({ createdAt: -1 })
-    .limit(limit);
+  return this.countDocuments(query);
 };
 
-// Create the notification model
+// Ensure the model includes virtual properties when converted to JSON
+notificationSchema.set('toJSON', { virtuals: true });
+notificationSchema.set('toObject', { virtuals: true });
+
 const Notification = mongoose.model('Notification', notificationSchema);
 
-module.exports = {
-  Notification
-};
+module.exports = { Notification };

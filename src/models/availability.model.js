@@ -1,249 +1,384 @@
-// File: src/models/availability.model.js
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
 const logger = require('../utils/logger');
 
 /**
- * Break Time Schema
- * Represents scheduled breaks within a doctor's working day
+ * Leave Schema
+ * For tracking doctor vacation, sick leave, or other time off
  */
-const breakTimeSchema = new mongoose.Schema({
-  // Doctor this break belongs to
-  doctor: {
+const leaveSchema = new mongoose.Schema({
+  doctorId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Doctor',
     required: true
   },
-  // Date of this break
-  date: {
-    type: Date,
-    required: true
-  },
-  // Start time in ISO format
-  startTime: {
-    type: Date,
-    required: true
-  },
-  // End time in ISO format
-  endTime: {
-    type: Date,
-    required: true
-  },
-  // Reason for the break (e.g., 'Lunch', 'Administrative tasks')
-  reason: {
+  title: {
     type: String,
     required: true,
     trim: true
   },
-  // Is this a recurring break
-  isRecurring: {
-    type: Boolean,
-    default: false
-  },
-  // Recurrence rule (if this is a recurring break)
-  recurrenceRule: {
-    type: String
-  },
-  // Status of this break
-  status: {
+  type: {
     type: String,
-    enum: ['scheduled', 'cancelled'],
-    default: 'scheduled'
+    enum: ['vacation', 'sick', 'personal', 'professional', 'other'],
+    default: 'vacation'
   },
-  // Notes about this break
-  notes: {
+  description: {
     type: String,
     trim: true
-  }
-}, baseSchema.baseOptions);
-
-/**
- * Leave Schema
- * Represents vacation, sick leave, or other time off for doctors
- */
-const leaveSchema = new mongoose.Schema({
-  // Doctor this leave belongs to
-  doctor: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
   },
-  // Type of leave
-  leaveType: {
-    type: String,
-    enum: ['vacation', 'sick', 'conference', 'training', 'personal', 'other'],
-    required: true
-  },
-  // Start date and time
-  startDateTime: {
+  startDate: {
     type: Date,
     required: true
   },
-  // End date and time
-  endDateTime: {
+  endDate: {
     type: Date,
-    required: true
+    required: true,
+    validate: {
+      validator: function(value) {
+        return value >= this.startDate;
+      },
+      message: 'End date must be greater than or equal to start date'
+    }
   },
-  // All-day flag
-  isAllDay: {
+  allDay: {
     type: Boolean,
     default: true
   },
-  // Status of the leave request
+  // For partial day leave (when allDay is false)
+  startTime: {
+    type: String,
+    validate: {
+      validator: function(value) {
+        return !this.allDay || /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+      },
+      message: 'Start time must be in 24-hour format (HH:MM)'
+    }
+  },
+  endTime: {
+    type: String,
+    validate: {
+      validator: function(value) {
+        return !this.allDay || /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+      },
+      message: 'End time must be in 24-hour format (HH:MM)'
+    }
+  },
+  // Approval status
   status: {
     type: String,
     enum: ['pending', 'approved', 'rejected', 'cancelled'],
     default: 'pending'
   },
-  // Approval information
-  approval: {
-    approvedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    approvedAt: {
-      type: Date
-    },
-    notes: {
-      type: String,
-      trim: true
-    }
+  // If rejected, reason for rejection
+  rejectionReason: {
+    type: String,
+    trim: true
   },
-  // Leave request details
-  description: {
+  // If approved, who approved it
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  // Date when leave was approved or rejected
+  statusUpdatedAt: {
+    type: Date
+  },
+  // Flag to track if affected appointments have been handled
+  affectedAppointmentsProcessed: {
+    type: Boolean,
+    default: false
+  },
+  // Reference to the notification sent to staff about affected appointments
+  notificationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Notification'
+  },
+  // Color for calendar display
+  color: {
+    type: String,
+    default: '#e74c3c', // Default red color for leave
+    validate: {
+      validator: function(v) {
+        return /^#[0-9A-Fa-f]{6}$/.test(v); // Validate hex color
+      },
+      message: props => `${props.value} is not a valid hex color!`
+    }
+  }
+}, baseSchema.baseOptions);
+
+/**
+ * Break Time Schema
+ * For tracking doctor regular breaks (lunch, admin time, etc.)
+ */
+const breakTimeSchema = new mongoose.Schema({
+  doctorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Doctor',
+    required: true
+  },
+  title: {
     type: String,
     required: true,
     trim: true
   },
-  // Emergency contact information during leave
-  emergencyContact: {
-    name: String,
-    phone: String,
-    email: String
-  },
-  // Alternative coverage arrangements
-  coverageArrangements: {
-    coveredBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    notes: String
-  },
-  // Documents attached to the leave request (e.g., doctor's note for sick leave)
-  attachments: [{
-    fileName: String,
-    fileType: String,
-    fileSize: Number,
-    filePath: String,
-    uploadedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  // Notes about this leave
-  notes: {
+  description: {
     type: String,
     trim: true
+  },
+  // Day of week (0 = Sunday, 1 = Monday, etc.)
+  dayOfWeek: {
+    type: Number,
+    min: 0,
+    max: 6,
+    required: true
+  },
+  startTime: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(value) {
+        return /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+      },
+      message: 'Start time must be in 24-hour format (HH:MM)'
+    }
+  },
+  endTime: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(value) {
+        return /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+      },
+      message: 'End time must be in 24-hour format (HH:MM)'
+    }
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  // Color for calendar display
+  color: {
+    type: String,
+    default: '#f39c12', // Default orange color for break
+    validate: {
+      validator: function(v) {
+        return /^#[0-9A-Fa-f]{6}$/.test(v); // Validate hex color
+      },
+      message: props => `${props.value} is not a valid hex color!`
+    }
+  },
+  // Optional date range for this break
+  // If not set, the break is considered recurring indefinitely
+  effectiveFrom: {
+    type: Date
+  },
+  effectiveTo: {
+    type: Date
   }
 }, baseSchema.baseOptions);
 
 /**
  * Availability Schema
- * Represents a doctor's overall availability for scheduling appointments
+ * Master schema for doctor availability including reference to leaves and breaks
  */
 const availabilitySchema = new mongoose.Schema({
-  // Doctor this availability belongs to
-  doctor: {
+  doctorId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  // Effective date range for this availability record
-  effectiveFrom: {
-    type: Date,
+    ref: 'Doctor',
     required: true,
-    default: Date.now
+    unique: true
   },
-  effectiveUntil: {
-    type: Date
-  },
-  // Status of this availability record
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'pending'],
-    default: 'active'
-  },
-  // Overall availability pattern description
-  description: {
-    type: String,
-    trim: true
-  },
-  // Weekly recurring schedule (references to RecurringTemplate)
-  recurringSchedule: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'RecurringTemplate'
-  },
-  // Maximum appointments per day
-  maxAppointmentsPerDay: {
-    type: Number,
-    min: 1,
-    default: 20
-  },
-  // Appointment types this doctor is available for
-  availableAppointmentTypes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'AppointmentType'
+  // Regular working hours
+  workingHours: [{
+    // Day of week (0 = Sunday, 1 = Monday, etc.)
+    dayOfWeek: {
+      type: Number,
+      min: 0,
+      max: 6,
+      required: true
+    },
+    // Is this a working day?
+    isWorking: {
+      type: Boolean,
+      default: true
+    },
+    startTime: {
+      type: String,
+      required: function() {
+        return this.isWorking;
+      },
+      validate: {
+        validator: function(value) {
+          return !this.isWorking || /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+        },
+        message: 'Start time must be in 24-hour format (HH:MM)'
+      }
+    },
+    endTime: {
+      type: String,
+      required: function() {
+        return this.isWorking;
+      },
+      validate: {
+        validator: function(value) {
+          return !this.isWorking || /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+        },
+        message: 'End time must be in 24-hour format (HH:MM)'
+      }
+    }
   }],
-  // Locations where this doctor is available
-  availableLocations: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Location'
-  }],
-  // Buffer time between appointments (in minutes, can override appointment type defaults)
-  defaultBufferTime: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  // Minimum advance notice required for bookings (in hours)
-  minimumNoticeTime: {
-    type: Number,
-    default: 24,
-    min: 0
-  },
-  // Maximum advance booking window (in days)
-  maximumBookingWindow: {
-    type: Number,
-    default: 60,
-    min: 1
-  }
+  // Special dates (holidays, different working hours, etc.)
+  specialDates: [{
+    date: {
+      type: Date,
+      required: true
+    },
+    // Is this a working day?
+    isWorking: {
+      type: Boolean,
+      default: false
+    },
+    startTime: {
+      type: String,
+      validate: {
+        validator: function(value) {
+          return !this.isWorking || /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+        },
+        message: 'Start time must be in 24-hour format (HH:MM)'
+      }
+    },
+    endTime: {
+      type: String,
+      validate: {
+        validator: function(value) {
+          return !this.isWorking || /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+        },
+        message: 'End time must be in 24-hour format (HH:MM)'
+      }
+    },
+    title: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    description: {
+      type: String,
+      trim: true
+    },
+    color: {
+      type: String,
+      default: '#3498db', // Default blue color for special dates
+      validate: {
+        validator: function(v) {
+          return /^#[0-9A-Fa-f]{6}$/.test(v); // Validate hex color
+        },
+        message: props => `${props.value} is not a valid hex color!`
+      }
+    }
+  }]
 }, baseSchema.baseOptions);
 
-// Compound index for date range queries
-availabilitySchema.index({ doctor: 1, effectiveFrom: 1, effectiveUntil: 1 });
-
-// Pre-save middleware to validate date ranges
-availabilitySchema.pre('save', function(next) {
-  if (this.effectiveUntil && this.effectiveFrom > this.effectiveUntil) {
-    const error = new Error('Effective start date must be before end date');
-    logger.error('Invalid availability date range', {
-      doctorId: this.doctor,
-      effectiveFrom: this.effectiveFrom,
-      effectiveUntil: this.effectiveUntil
+// Method to check if a doctor is available on a specific date and time
+availabilitySchema.methods.isDoctorAvailable = async function(date, startTime, endTime) {
+  try {
+    const dateObj = new Date(date);
+    const dayOfWeek = dateObj.getDay();
+    const formattedDate = dateObj.toISOString().split('T')[0];
+    
+    // Check if it's a special date
+    const specialDate = this.specialDates.find(
+      sd => new Date(sd.date).toISOString().split('T')[0] === formattedDate
+    );
+    
+    if (specialDate && !specialDate.isWorking) {
+      return false; // Not a working day
+    }
+    
+    // Use special date hours if exists, otherwise use regular working hours
+    let workingDay;
+    if (specialDate && specialDate.isWorking) {
+      workingDay = {
+        startTime: specialDate.startTime,
+        endTime: specialDate.endTime
+      };
+    } else {
+      workingDay = this.workingHours.find(wh => wh.dayOfWeek === dayOfWeek);
+      if (!workingDay || !workingDay.isWorking) {
+        return false; // Not a working day
+      }
+    }
+    
+    // Check if the requested time is within working hours
+    if (startTime < workingDay.startTime || endTime > workingDay.endTime) {
+      return false; // Outside working hours
+    }
+    
+    // Check if there is a leave scheduled for this date
+    const Leave = mongoose.model('Leave');
+    const leaves = await Leave.find({
+      doctorId: this.doctorId,
+      status: 'approved',
+      startDate: { $lte: dateObj },
+      endDate: { $gte: dateObj }
     });
-    return next(error);
+    
+    if (leaves.length > 0) {
+      // For each leave, check if it affects the requested time
+      for (const leave of leaves) {
+        if (leave.allDay) {
+          return false; // All day leave, doctor not available
+        }
+        
+        // For partial day leave, check if the requested time overlaps with leave time
+        if (startTime < leave.endTime && endTime > leave.startTime) {
+          return false; // Overlap with leave time
+        }
+      }
+    }
+    
+    // Check if there are breaks during the requested time
+    const BreakTime = mongoose.model('BreakTime');
+    const breaks = await BreakTime.find({
+      doctorId: this.doctorId,
+      dayOfWeek: dayOfWeek,
+      isActive: true,
+      // If effectiveFrom and effectiveTo are set, check if the date is within that range
+      $or: [
+        { effectiveFrom: { $exists: false } },
+        { effectiveFrom: null },
+        { effectiveFrom: { $lte: dateObj } }
+      ],
+      $or: [
+        { effectiveTo: { $exists: false } },
+        { effectiveTo: null },
+        { effectiveTo: { $gte: dateObj } }
+      ]
+    });
+    
+    if (breaks.length > 0) {
+      // For each break, check if it overlaps with the requested time
+      for (const breakTime of breaks) {
+        if (startTime < breakTime.endTime && endTime > breakTime.startTime) {
+          return false; // Overlap with break time
+        }
+      }
+    }
+    
+    // If all checks pass, the doctor is available
+    return true;
+  } catch (error) {
+    logger.error('Error checking doctor availability', { error: error.message, doctorId: this.doctorId });
+    throw error;
   }
-  
-  next();
-});
+};
 
-// Create models
-const BreakTime = mongoose.model('BreakTime', breakTimeSchema);
+// Compile models
 const Leave = mongoose.model('Leave', leaveSchema);
+const BreakTime = mongoose.model('BreakTime', breakTimeSchema);
 const Availability = mongoose.model('Availability', availabilitySchema);
 
 module.exports = {
-  BreakTime,
   Leave,
+  BreakTime,
   Availability
 };
