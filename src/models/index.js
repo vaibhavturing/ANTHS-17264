@@ -21,6 +21,7 @@ const analytics = require('./analytics.model');
 const appointmentType = require('./appointmentType.model');
 const schedule = require('./schedule.model');
 const availability = require('./availability.model');
+const recurringAppointmentSeries = require('./recurringAppointment.model');
 /**
  * CHANGES:
  * - Added VerificationToken to the exports
@@ -44,5 +45,6 @@ module.exports = {
   analytics,
   appointmentType,
   schedule,
-  availability
+  availability,
+  recurringAppointmentSeries
 };

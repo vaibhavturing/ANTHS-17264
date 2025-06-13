@@ -28,6 +28,8 @@ const notificationRoutes = require('./notification.routes');
 const insuranceRoutes = require('./insurance.routes'); // Added new insurance routes
 const billingRoutes = require('./billing.routes');     // Added new billing routes
 const analyticsRoutes = require('./analytics.routes'); // Added new analytics routes
+// CHANGE: Added import for recurring appointment routes
+const recurringAppointmentRoutes = require('./recurringAppointment.routes');
 
 
 
@@ -71,6 +73,8 @@ const mountRoutes = () => {
   router.use('/insurance', insuranceRoutes); // Added new insurance routes
   router.use('/billing', billingRoutes);     // Added new billing routes
   router.use('/analytics', analyticsRoutes); // Added new analytics routes
+  // CHANGE: Added recurring appointment routes
+  router.use('/api/recurring-appointments', recurringAppointmentRoutes);
 
 
   // All routes below this point require authentication
