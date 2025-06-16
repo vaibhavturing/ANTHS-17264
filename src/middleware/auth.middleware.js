@@ -10,7 +10,6 @@ const { StatusCodes } = require("http-status-codes");
  */
 
 const authMiddleware = {
-
   /**
    * Authenticate a user based on JWT token
    * @param {Object} req - Express request object

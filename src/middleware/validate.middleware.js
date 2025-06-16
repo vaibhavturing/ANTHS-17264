@@ -1,38 +1,53 @@
-// File: src/middleware/validate.middleware.js (Make sure this exists and works correctly)
-const { validationResult } = require('express-validator');
 const { ResponseUtil } = require('../utils/response.util');
+const logger = require('../utils/logger');
 
 /**
- * Middleware to validate request data using express-validator
- * @param {Array} validations - Array of validation middlewares
- * @returns {Function} Express middleware
+ * Middleware for request validation using Joi schemas
+ * @param {Object} schema - Joi validation schema
+ * @returns {Function} Express middleware function
  */
-const validateMiddleware = (validations) => {
-  return async (req, res, next) => {
-    // Execute all validations
-    await Promise.all(validations.map(validation => validation.run(req)));
-    
-    // Check for validation errors
-    const errors = validationResult(req);
-    
-    if (!errors.isEmpty()) {
-      // Format errors for response
-      const formattedErrors = {};
-      errors.array().forEach(error => {
-        formattedErrors[error.param] = error.msg;
+const validate = (schema) => {
+  return (req, res, next) => {
+    if (!schema) {
+      return next();
+    }
+
+    try {
+      const { error, value } = schema.validate(req.body, {
+        abortEarly: false,
+        stripUnknown: true
       });
-      
+
+      if (error) {
+        const validationErrors = error.details.map(detail => ({
+          field: detail.path.join('.'),
+          message: detail.message
+        }));
+
+        logger.warn('Validation error', { errors: validationErrors });
+        
+        return ResponseUtil.error(
+          res,
+          'Validation failed',
+          400,
+          'VALIDATION_ERROR',
+          { validationErrors }
+        );
+      }
+
+      // Replace req.body with validated data
+      req.body = value;
+      next();
+    } catch (err) {
+      logger.error('Validation middleware error', { error: err.message });
       return ResponseUtil.error(
-        res, 
-        'Validation failed', 
-        400, 
-        'VALIDATION_ERROR', 
-        { errors: formattedErrors }
+        res,
+        'Validation process failed',
+        500,
+        'SERVER_ERROR'
       );
     }
-    
-    next();
   };
 };
 
-module.exports = validateMiddleware;
+module.exports = validate;
