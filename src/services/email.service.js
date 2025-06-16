@@ -1,459 +1,336 @@
 const config = require('../config/config');
 const logger = require('../utils/logger');
-const { ValidationError } = require('../utils/errors');
+// const nodemailer = require('nodemailer');
+const { NotificationError } = require('../utils/errors');
+const moment = require('moment');
 
 /**
- * Email service for sending transactional emails 
- * in the Healthcare Management Application
+ * Initialize email transporter based on environment
  */
+let transporter;
+
+if (config.NODE_ENV === 'production') {
+  transporter = nodemailer.createTransport({
+    host: config.EMAIL_HOST,
+    port: config.EMAIL_PORT,
+    secure: config.EMAIL_SECURE,
+    auth: {
+      user: config.EMAIL_USERNAME,
+      pass: config.EMAIL_PASSWORD
+    }
+  });
+} else {
+  transporter = {
+    sendMail: async (mailOptions) => {
+      logger.info('MOCK EMAIL SENT', {
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        text: mailOptions.text ? mailOptions.text.substring(0, 100) + '...' : null
+      });
+      return { messageId: `mock-${Date.now()}` };
+    }
+  };
+}
+
 const emailService = {
   /**
-   * Send a generic email
-   * @param {Object} options - Email options
-   * @param {string} options.to - Recipient email address
-   * @param {string} options.subject - Email subject
-   * @param {string} options.text - Plain text email content
-   * @param {string} options.html - HTML email content
-   * @param {string} [options.cc] - CC recipients (optional)
-   * @param {string} [options.bcc] - BCC recipients (optional)
-   * @param {string} [options.from] - Sender email (optional, uses default from config)
-   * @param {string} [options.priority] - Email priority (high, normal, low)
-   * @returns {Promise<Object>} Result of the email operation
+   * Send a general email
    */
-
-  
-  sendEmail: async (options) => {
+  sendEmail: async (to, subject, text, html) => {
     try {
-      const { to, subject, text, html, cc, bcc, from, priority = 'normal' } = options;
-
-      // Validate required fields
-      if (!to || !subject || (!text && !html)) {
-        throw new ValidationError('Missing required email fields');
-      }
-
-      // Mock email implementation for development
-      logger.info(`MOCK EMAIL: Sending email to ${to}`, {
+      const mailOptions = {
+        from: `"${config.EMAIL_FROM_NAME}" <${config.EMAIL_FROM}>`,
+        to,
         subject,
-        priority,
-        cc: cc || 'none',
-        bcc: bcc || 'none'
-      });
-
-      if (config.NODE_ENV === 'development' || config.NODE_ENV === 'test') {
-        logger.info('MOCK EMAIL CONTENT:');
-        logger.info(`Subject: ${subject}`);
-        logger.info(`Text: ${text || 'No plain text provided'}`);
-        logger.info(`HTML: ${html ? '[HTML Content Available]' : 'No HTML provided'}`);
-      }
+        text,
+        html: html || text
+      };
 
       if (config.NODE_ENV === 'production') {
-        // TODO: Replace with actual email provider integration
-        // const emailProvider = require('../config/emailProvider');
-        // return await emailProvider.send({
-        //   to,
-        //   from: from || config.EMAIL_FROM,
-        //   subject,
-        //   text,
-        //   html,
-        //   cc,
-        //   bcc,
-        //   priority
-        // });
+        const info = await transporter.sendMail(mailOptions);
+        return {
+          success: true,
+          messageId: info.messageId
+        };
+      } else {
+        logger.info(`MOCK EMAIL: To: ${to}, Subject: ${subject}`);
+        logger.info(`MOCK EMAIL: Text content: ${text.substring(0, 100)}...`);
+        return {
+          success: true,
+          message: `Email sent successfully to ${to}`,
+          mock: true
+        };
       }
-
-      // Return success for development/testing
-      return {
-        success: true,
-        messageId: `mock-email-${Date.now()}-${Math.round(Math.random() * 1000)}`,
-        message: `Email sent successfully to ${to}`,
-      };
     } catch (error) {
       logger.error('Failed to send email', {
         error: error.message,
-        email: options.to
+        email: to,
+        subject
       });
-      throw error;
+      throw new NotificationError('Failed to send email', 'EMAIL_SEND_FAILED');
     }
   },
 
   /**
-   * Send a password reset email
-   * @param {string} to - Recipient email address
-   * @param {string} resetLink - Password reset link
-   * @returns {Promise<Object>} Result of the email operation
+   * Send password reset email
    */
   sendPasswordResetEmail: async (to, resetLink) => {
     try {
-      return await emailService.sendEmail({
-        to,
-        subject: 'Password Reset Request - Healthcare App',
-        text: `You requested a password reset. Click this link to reset your password: ${resetLink}. This link expires in 60 minutes.`,
-        html: `
+      const subject = 'Password Reset Request - Healthcare App';
+      const html = `
+        <div>
+          <h2>Password Reset Request</h2>
           <p>You requested a password reset.</p>
-          <p>Click <a href="${resetLink}">this link</a> to reset your password.</p>
-          <p>This link expires in 60 minutes.</p>
-          <p>If you didn't request this, please ignore this email.</p>
-        `,
-        priority: 'high'
-      });
+          <p>Please click the button below to reset your password. This link will expire in 60 minutes.</p>
+          <div style="margin: 25px 0;">
+            <a href="${resetLink}">Reset Password</a>
+          </div>
+          <p>If you did not request this password reset, please ignore this email or contact support.</p>
+          <p>Thank you,<br>Healthcare App Team</p>
+        </div>
+      `;
+      const text = `
+        You requested a password reset.
+        Please click this link to reset your password: ${resetLink}
+        This link expires in 60 minutes.
+        If you did not request this password reset, please ignore this email or contact support.
+        Thank you,
+        Healthcare App Team
+      `;
+      return await emailService.sendEmail(to, subject, text, html);
     } catch (error) {
       logger.error('Failed to send password reset email', {
         error: error.message,
         email: to
       });
-      throw new Error('Failed to send password reset email');
+      throw new NotificationError('Failed to send password reset email', 'RESET_EMAIL_FAILED');
     }
   },
 
   /**
-   * Send an appointment confirmation email
-   * @param {string} to - Recipient email address
-   * @param {Object} appointmentDetails - Appointment details
-   * @returns {Promise<Object>} Result of the email operation
+   * Send appointment confirmation email
    */
-  sendAppointmentConfirmationEmail: async (to, appointmentDetails) => {
+  sendAppointmentConfirmation: async (to, appointmentData) => {
     try {
-      const {
-        appointmentDate,
-        appointmentTime,
-        doctorName,
-        patientName,
-        location,
-        appointmentType
-      } = appointmentDetails;
-
-      return await emailService.sendEmail({
-        to,
-        subject: `Appointment Confirmation: ${appointmentDate} at ${appointmentTime}`,
-        text: `Your appointment with Dr. ${doctorName} has been confirmed for ${appointmentDate} at ${appointmentTime}. Location: ${location}. Type: ${appointmentType}.`,
-        html: `
+      const subject = 'Appointment Confirmation - Healthcare App';
+      const formattedData = {
+        ...appointmentData,
+        date: moment(appointmentData.startTime).format('dddd, MMMM D, YYYY'),
+        startTime: moment(appointmentData.startTime).format('h:mm A'),
+        endTime: moment(appointmentData.endTime).format('h:mm A'),
+        viewLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}`,
+        cancelLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}/cancel`
+      };
+      const html = `
+        <div>
           <h2>Appointment Confirmation</h2>
-          <p>Dear ${patientName},</p>
-          <p>Your appointment has been confirmed with the following details:</p>
-          <ul>
-            <li><strong>Date:</strong> ${appointmentDate}</li>
-            <li><strong>Time:</strong> ${appointmentTime}</li>
-            <li><strong>Doctor:</strong> Dr. ${doctorName}</li>
-            <li><strong>Location:</strong> ${location}</li>
-            <li><strong>Type:</strong> ${appointmentType}</li>
-          </ul>
-          <p>Please arrive 15 minutes before your appointment time.</p>
-          <p>If you need to reschedule, please contact us at least 24 hours in advance.</p>
-        `
-      });
+          <p>Your appointment has been confirmed:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p><strong>Doctor:</strong> Dr. ${appointmentData.doctorName}</p>
+            <p><strong>Date:</strong> ${formattedData.date}</p>
+            <p><strong>Time:</strong> ${formattedData.startTime} - ${formattedData.endTime}</p>
+            <p><strong>Appointment Type:</strong> ${appointmentData.appointmentType}</p>
+          </div>
+          <div>
+            <a href="${formattedData.viewLink}">View Appointment</a>
+            <a href="${formattedData.cancelLink}">Cancel Appointment</a>
+          </div>
+          <p>Thank you,<br>Healthcare App Team</p>
+        </div>
+      `;
+      const text = `
+        Your appointment has been confirmed:
+        Doctor: Dr. ${appointmentData.doctorName}
+        Date: ${formattedData.date}
+        Time: ${formattedData.startTime} - ${formattedData.endTime}
+        Appointment Type: ${appointmentData.appointmentType}
+        To view your appointment: ${formattedData.viewLink}
+        To cancel your appointment: ${formattedData.cancelLink}
+        Thank you,
+        Healthcare App Team
+      `;
+      return await emailService.sendEmail(to, subject, text, html);
     } catch (error) {
       logger.error('Failed to send appointment confirmation email', {
         error: error.message,
         email: to
       });
-      throw new Error('Failed to send appointment confirmation email');
+      throw new NotificationError('Failed to send confirmation email', 'CONFIRMATION_EMAIL_FAILED');
     }
   },
 
   /**
-   * Send a test results notification email
-   * @param {string} to - Recipient email address
-   * @param {Object} resultDetails - Test result details
-   * @returns {Promise<Object>} Result of the email operation
+   * Send appointment cancellation email
    */
-  sendTestResultsEmail: async (to, resultDetails) => {
+  sendAppointmentCancellation: async (to, appointmentData) => {
     try {
-      const {
-        patientName,
-        testName,
-        testDate,
-        isUrgent,
-        portalLink
-      } = resultDetails;
-
-      const subject = isUrgent
-        ? `URGENT: Your ${testName} Results are Available`
-        : `Your ${testName} Results are Available`;
-
-      const text = `Dear ${patientName}, your test results for ${testName} performed on ${testDate} are now available. ${
-        isUrgent
-          ? 'These results require immediate attention. Please contact your healthcare provider as soon as possible.'
-          : 'You can view them by logging into your patient portal.'
-      }`;
-
+      const subject = 'Appointment Cancellation - Healthcare App';
+      const formattedData = {
+        ...appointmentData,
+        date: moment(appointmentData.startTime).format('dddd, MMMM D, YYYY'),
+        startTime: moment(appointmentData.startTime).format('h:mm A'),
+        endTime: moment(appointmentData.endTime).format('h:mm A'),
+        bookAgainLink: `${config.FRONTEND_URL}/book`
+      };
       const html = `
-        <h2>${isUrgent ? 'URGENT: ' : ''}Test Results Available</h2>
-        <p>Dear ${patientName},</p>
-        <p>Your results for the following test are now available:</p>
-        <ul>
-          <li><strong>Test:</strong> ${testName}</li>
-          <li><strong>Date:</strong> ${testDate}</li>
-        </ul>
-        ${
-          isUrgent
-            ? `
-              <p>These results require immediate attention.</p>
-              <p>Please contact your healthcare provider as soon as possible to discuss these results.</p>
-            `
-            : `
-              <p>You can view your results by logging in to your <a href="${portalLink}">patient portal</a>.</p>
-            `
-        }
+        <div>
+          <h2>Appointment Cancellation</h2>
+          <p>Your appointment has been cancelled:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p><strong>Doctor:</strong> Dr. ${appointmentData.doctorName}</p>
+            <p><strong>Date:</strong> ${formattedData.date}</p>
+            <p><strong>Time:</strong> ${formattedData.startTime} - ${formattedData.endTime}</p>
+            <p><strong>Reason:</strong> ${appointmentData.cancellationReason || 'Not specified'}</p>
+          </div>
+          <div>
+            <a href="${formattedData.bookAgainLink}">Book Another Appointment</a>
+          </div>
+          <p>Thank you,<br>Healthcare App Team</p>
+        </div>
       `;
-
-      return await emailService.sendEmail({
-        to,
-        subject,
-        priority: isUrgent ? 'high' : 'normal',
-        text,
-        html
-      });
+      const text = `
+        Your appointment has been cancelled:
+        Doctor: Dr. ${appointmentData.doctorName}
+        Date: ${formattedData.date}
+        Time: ${formattedData.startTime} - ${formattedData.endTime}
+        Reason: ${appointmentData.cancellationReason || 'Not specified'}
+        To book another appointment: ${formattedData.bookAgainLink}
+        Thank you,
+        Healthcare App Team
+      `;
+      return await emailService.sendEmail(to, subject, text, html);
     } catch (error) {
-      logger.error('Failed to send test results email', {
+      logger.error('Failed to send appointment cancellation email', {
         error: error.message,
         email: to
       });
-      throw new Error('Failed to send test results email');
-    }
-  },
-
-   /**
-   * Send a staff notification email
-   * @param {string} type - Notification type
-   * @param {string} subject - Email subject
-   * @param {Object} data - Notification data
-   * @returns {Promise<Object>} Result of the email operation
-   */
-  sendStaffNotificationEmail: async (type, subject, data) => {
-    try {
-      logger.info(`MOCK EMAIL: Staff Notification - ${subject}`);
-      logger.info(`MOCK EMAIL: Type: ${type}`);
-      logger.info(`MOCK EMAIL: Data: ${JSON.stringify(data)}`);
-
-      // NEW: Handle emergency notification emails to staff
-      let mockEmailContent = '';
-
-      if (type === 'doctor_emergency_unavailable') {
-        const doctorName = data.data.doctorName;
-        const startDate = new Date(data.data.startDate).toLocaleDateString();
-        const endDate = new Date(data.data.endDate).toLocaleDateString();
-        const count = data.data.affectedAppointmentsCount;
-        const reason = data.data.reason;
-
-        mockEmailContent = `
-EMERGENCY ALERT: Doctor Unavailable
-
-Doctor ${doctorName} is unavailable from ${startDate} to ${endDate} due to ${reason}.
-There are ${count} appointment(s) affected that need immediate attention.
-
-Affected appointments:
-${data.data.affectedAppointments.map(apt =>
-  `- ${apt.patientName} (${apt.appointmentType}) on ${new Date(apt.startTime).toLocaleString()}`
-).join('\n')}
-
-URGENT: Please log in to the admin portal immediately to manage these appointments.
-`;
-        logger.info(`MOCK EMAIL CONTENT:\n${mockEmailContent}`);
-      }
-
-      if (config.NODE_ENV === 'production') {
-        // const emailProvider = require('../config/emailProvider');
-        // const emailTemplate = getEmailTemplateForType(type, data);
-        // return await emailProvider.send({
-        //   to: getStaffEmailsForType(type),
-        //   from: config.EMAIL_FROM,
-        //   subject,
-        //   text: emailTemplate.text,
-        //   html: emailTemplate.html
-        // });
-      }
-
-      return {
-        success: true,
-        message: `Staff notification email sent successfully`,
-      };
-    } catch (error) {
-      logger.error('Failed to send staff notification email', {
-        error: error.message,
-        type,
-        subject,
-      });
-      throw new Error('Failed to send staff notification email');
+      throw new NotificationError('Failed to send cancellation email', 'CANCELLATION_EMAIL_FAILED');
     }
   },
 
   /**
-   * Send a patient notification email
-   * @param {string} to - Patient email address
-   * @param {string} type - Notification type
-   * @param {string} subject - Email subject
-   * @param {Object} data - Notification data
-   * @returns {Promise<Object>} Result of the email operation
+   * Send appointment rescheduled email
    */
-  sendPatientNotificationEmail: async (to, type, subject, data) => {
+  sendAppointmentRescheduled: async (to, appointmentData) => {
     try {
-      logger.info(`MOCK EMAIL: Patient Notification to ${to} - ${subject}`);
-      logger.info(`MOCK EMAIL: Type: ${type}`);
-      logger.info(`MOCK EMAIL: Data: ${JSON.stringify(data)}`);
-
-      let mockEmailContent = '';
-
-      if (type === 'appointment_emergency_cancellation') {
-        const appointmentDate = new Date(data.appointment.startTime).toLocaleDateString();
-        const appointmentTime = new Date(data.appointment.startTime).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-
-        mockEmailContent = `
-Dear ${data.patient?.firstName || 'Patient'},
-
-IMPORTANT NOTICE: Your appointment scheduled for ${appointmentDate} at ${appointmentTime} has been CANCELLED due to an emergency situation.
-
-Reason: ${data.reason || 'Doctor unavailability (emergency)'}
-
-We sincerely apologize for any inconvenience this may cause.
-`;
-
-        if (data.alternatives && data.alternatives.length > 0) {
-          mockEmailContent += `
-We have identified the following alternative appointment slots:
-
-${data.alternatives.map((slot, index) =>
-  `Option ${index + 1}: ${new Date(slot.startTime).toLocaleDateString()} at ${new Date(slot.startTime).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`
-).join('\n')}
-
-Please call our office as soon as possible to reschedule your appointment, or reply to this email with your preferred option number.
-`;
-        } else {
-          mockEmailContent += `
-Please contact our office at your earliest convenience to reschedule your appointment.
-`;
-        }
-
-        mockEmailContent += `
-Thank you for your understanding.
-
-Healthcare Management Team
-`;
-
-        logger.info(`MOCK EMAIL CONTENT:\n${mockEmailContent}`);
-      } else if (type === 'appointment_emergency_rescheduled') {
-        const originalDate = new Date(data.originalAppointment.startTime).toLocaleDateString();
-        const originalTime = new Date(data.originalAppointment.startTime).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-
-        const newDate = new Date(data.newAppointment.startTime).toLocaleDateString();
-        const newTime = new Date(data.newAppointment.startTime).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-
-        mockEmailContent = `
-Dear ${data.patient?.firstName || 'Patient'},
-
-IMPORTANT NOTICE: Your appointment has been rescheduled due to an emergency situation.
-
-Your original appointment:
-Date: ${originalDate}
-Time: ${originalTime}
-Provider: ${data.originalDoctor.name}
-
-Your new appointment:
-Date: ${newDate}
-Time: ${newTime}
-Provider: ${data.newDoctor.name}
-
-This change has been made automatically to ensure you receive care as quickly as possible.
-
-If this new appointment time does not work for you, please contact our office as soon as possible to discuss alternatives.
-
-We sincerely apologize for any inconvenience this may cause and appreciate your understanding.
-
-Healthcare Management Team
-`;
-
-        logger.info(`MOCK EMAIL CONTENT:\n${mockEmailContent}`);
-      }
-
-      if (config.NODE_ENV === 'production') {
-        // const emailProvider = require('../config/emailProvider');
-        // const emailTemplate = getEmailTemplateForType(type, data);
-        // return await emailProvider.send({
-        //   to,
-        //   from: config.EMAIL_FROM,
-        //   subject,
-        //   text: emailTemplate.text,
-        //   html: emailTemplate.html
-        // });
-      }
-
-      return {
-        success: true,
-        message: `Patient notification email sent successfully to ${to}`,
+      const subject = 'Appointment Rescheduled - Healthcare App';
+      const formattedData = {
+        ...appointmentData,
+        newDate: moment(appointmentData.startTime).format('dddd, MMMM D, YYYY'),
+        newStartTime: moment(appointmentData.startTime).format('h:mm A'),
+        newEndTime: moment(appointmentData.endTime).format('h:mm A'),
+        oldDate: moment(appointmentData.previousStartTime).format('dddd, MMMM D, YYYY'),
+        oldStartTime: moment(appointmentData.previousStartTime).format('h:mm A'),
+        oldEndTime: moment(appointmentData.previousEndTime).format('h:mm A'),
+        viewLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}`,
+        cancelLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}/cancel`
       };
+      const html = `
+        <div>
+          <h2>Appointment Rescheduled</h2>
+          <p>Your appointment has been rescheduled:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p><strong>Doctor:</strong> Dr. ${appointmentData.doctorName}</p>
+            <p><strong>Appointment Type:</strong> ${appointmentData.appointmentType}</p>
+            <p><strong>Previous Date:</strong> ${formattedData.oldDate}</p>
+            <p><strong>Previous Time:</strong> ${formattedData.oldStartTime} - ${formattedData.oldEndTime}</p>
+            <p>New Appointment:</p>
+            <p><strong>New Date:</strong> ${formattedData.newDate}</p>
+            <p><strong>New Time:</strong> ${formattedData.newStartTime} - ${formattedData.newEndTime}</p>
+            <p><strong>Reason:</strong> ${appointmentData.rescheduleReason || 'Not specified'}</p>
+          </div>
+          <div>
+            <a href="${formattedData.viewLink}">View Appointment</a>
+            <a href="${formattedData.cancelLink}">Cancel Appointment</a>
+          </div>
+          <p>If this new time doesn't work for you, please cancel and reschedule at your convenience.</p>
+          <p>Thank you,<br>Healthcare App Team</p>
+        </div>
+      `;
+      const text = `
+        Your appointment has been rescheduled:
+        Doctor: Dr. ${appointmentData.doctorName}
+        Appointment Type: ${appointmentData.appointmentType}
+        Previous Date: ${formattedData.oldDate}
+        Previous Time: ${formattedData.oldStartTime} - ${formattedData.oldEndTime}
+        New Date: ${formattedData.newDate}
+        New Time: ${formattedData.newStartTime} - ${formattedData.newEndTime}
+        Reason: ${appointmentData.rescheduleReason || 'Not specified'}
+        To view your appointment: ${formattedData.viewLink}
+        To cancel your appointment: ${formattedData.cancelLink}
+        If this new time doesn't work for you, please cancel and reschedule at your convenience.
+        Thank you,
+        Healthcare App Team
+      `;
+      return await emailService.sendEmail(to, subject, text, html);
     } catch (error) {
-      logger.error('Failed to send patient notification email', {
+      logger.error('Failed to send appointment rescheduled email', {
         error: error.message,
-        email: to,
-        type,
-        subject,
+        email: to
       });
-      throw new Error('Failed to send patient notification email');
+      throw new NotificationError('Failed to send rescheduled notification email', 'RESCHEDULE_EMAIL_FAILED');
     }
   },
 
   /**
-   * Send appointment reminder email to patient
-   * @param {Object} appointment - Appointment object with populated patient and doctor
-   * @returns {Promise<Object>} Result of the email operation
+   * Send reminder email for upcoming appointment
    */
-  sendAppointmentReminderEmail: async (appointment) => {
+  sendAppointmentReminder: async (to, appointmentData) => {
     try {
-      if (!appointment.patient || !appointment.patient.email) {
-        throw new Error('Patient data missing from appointment');
-      }
-
-      const to = appointment.patient.email;
-      const subject = 'Upcoming Appointment Reminder';
-
-      logger.info(`MOCK EMAIL: Appointment Reminder to ${to} - ${subject}`);
-      logger.info(`MOCK EMAIL: Appointment Details: ${JSON.stringify({
-        appointmentId: appointment._id,
-        patientId: appointment.patient._id,
-        doctorId: appointment.doctor._id,
-        startTime: appointment.startTime,
-        endTime: appointment.endTime,
-      })}`);
-
-      if (config.NODE_ENV === 'production') {
-        // const emailProvider = require('../config/emailProvider');
-        // return await emailProvider.send({
-        //   to,
-        //   from: config.EMAIL_FROM,
-        //   subject,
-        //   text: `Dear ${appointment.patient.firstName},\n\nThis is a reminder of your upcoming appointment with Dr. ${appointment.doctor.user.lastName} on ${new Date(appointment.startTime).toLocaleString()}.\n\nPlease arrive 15 minutes before your scheduled appointment time.`,
-        //   html: `
-        //     <p>Dear ${appointment.patient.firstName},</p>
-        //     <p>This is a reminder of your upcoming appointment with Dr. ${appointment.doctor.user.lastName} on ${new Date(appointment.startTime).toLocaleString()}.</p>
-        //     <p>Please arrive 15 minutes before your scheduled appointment time.</p>
-        //   `
-        // });
-      }
-
-      return {
-        success: true,
-        message: `Appointment reminder email sent successfully to ${to}`,
+      const subject = 'Appointment Reminder - Healthcare App';
+      const formattedData = {
+        ...appointmentData,
+        date: moment(appointmentData.startTime).format('dddd, MMMM D, YYYY'),
+        startTime: moment(appointmentData.startTime).format('h:mm A'),
+        endTime: moment(appointmentData.endTime).format('h:mm A'),
+        viewLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}`,
+        cancelLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}/cancel`,
+        rescheduleLink: `${config.FRONTEND_URL}/appointments/${appointmentData._id}/reschedule`
       };
+      const html = `
+        <div>
+          <h2>Appointment Reminder</h2>
+          <p>This is a reminder for your upcoming appointment:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p><strong>Doctor:</strong> Dr. ${appointmentData.doctorName}</p>
+            <p><strong>Date:</strong> ${formattedData.date}</p>
+            <p><strong>Time:</strong> ${formattedData.startTime} - ${formattedData.endTime}</p>
+            <p><strong>Appointment Type:</strong> ${appointmentData.appointmentType}</p>
+            <p><strong>Location:</strong> ${appointmentData.location || 'Main Office'}</p>
+          </div>
+          <div>
+            <a href="${formattedData.viewLink}">View Appointment</a>
+            <a href="${formattedData.rescheduleLink}">Reschedule</a>
+            <a href="${formattedData.cancelLink}">Cancel</a>
+          </div>
+          <p>Please arrive 10 minutes before your appointment time.</p>
+          <p>Thank you,<br>Healthcare App Team</p>
+        </div>
+      `;
+      const text = `
+        This is a reminder for your upcoming appointment:
+        Doctor: Dr. ${appointmentData.doctorName}
+        Date: ${formattedData.date}
+        Time: ${formattedData.startTime} - ${formattedData.endTime}
+        Appointment Type: ${appointmentData.appointmentType}
+        Location: ${appointmentData.location || 'Main Office'}
+        To view your appointment: ${formattedData.viewLink}
+        To reschedule: ${formattedData.rescheduleLink}
+        To cancel: ${formattedData.cancelLink}
+        Please arrive 10 minutes before your appointment time.
+        Thank you,
+        Healthcare App Team
+      `;
+      return await emailService.sendEmail(to, subject, text, html);
     } catch (error) {
       logger.error('Failed to send appointment reminder email', {
         error: error.message,
-        appointmentId: appointment?._id,
+        email: to
       });
-      throw new Error('Failed to send appointment reminder email');
+      throw new NotificationError('Failed to send reminder email', 'REMINDER_EMAIL_FAILED');
     }
   }
-  
+  // Add more methods as needed...
 };
 
 module.exports = emailService;
