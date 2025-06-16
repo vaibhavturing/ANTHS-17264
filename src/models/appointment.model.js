@@ -1,9 +1,6 @@
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
 
-/**
- * Schema for appointments in the Healthcare Management Application
- */
 const appointmentSchema = new mongoose.Schema({
   patient: {
     type: mongoose.Schema.Types.ObjectId,
@@ -15,11 +12,6 @@ const appointmentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  appointmentType: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'AppointmentType',
-    required: true
-  },
   startTime: {
     type: Date,
     required: true
@@ -28,84 +20,71 @@ const appointmentSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
-  duration: {
-    type: Number, // Duration in minutes
-    required: true,
-    min: 5
+  appointmentType: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AppointmentType',
+    required: true
   },
   status: {
     type: String,
-    enum: ['scheduled', 'confirmed', 'checked-in', 'completed', 'cancelled', 'no-show', 'pending'],
+    enum: ['scheduled', 'completed', 'cancelled', 'rescheduled', 'no-show'],
     default: 'scheduled'
-  },
-  cancellationReason: {
-    type: String,
-    trim: true
   },
   notes: {
     type: String,
     trim: true
   },
-  // For telehealth appointments
-  videoLink: {
+  // Added cancellation rule
+  cancellationRule: {
     type: String,
-    trim: true
+    enum: ['24h', '48h', '72h', 'custom', 'none'],
+    default: '24h'
   },
-  // Special instructions for the appointment
-  specialInstructions: {
-    type: String,
-    trim: true
-  },
-  // CHANGE: Enhanced fields for recurring appointments
-  // Flag to indicate if this is part of a recurring series
-  isPartOfSeries: {
-    type: Boolean,
-    default: false
-  },
-  // Reference to the recurring series this appointment belongs to
-  recurringSeriesId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'RecurringAppointmentSeries'
-  },
-  // Position in the series (e.g., 1st, 2nd, etc.)
-  seriesPosition: {
+  // Added custom cancellation hours for custom rule
+  customCancellationHours: {
     type: Number,
-    min: 1
+    min: 1,
+    max: 168, // 1 week in hours
+    default: 24
   },
-  // Whether this specific occurrence has been modified from the original series pattern
-  isModifiedOccurrence: {
+  // Fields to track rescheduling history
+  previousStartTime: Date,
+  previousEndTime: Date,
+  rescheduleReason: String,
+  rescheduleDate: Date,
+  // Field to track if this appointment was filled from waitlist
+  filledFromWaitlist: {
     type: Boolean,
     default: false
-  },
-  // Temporary lock for preventing double booking
-  temporaryLock: {
-    isLocked: {
-      type: Boolean, 
-      default: false
-    },
-    lockedUntil: {
-      type: Date
-    },
-    lockId: {
-      type: String
-    }
   }
 }, baseSchema.baseOptions);
 
-// Index for efficient querying of appointments by doctor and time range
+// Add indexes for better query performance
 appointmentSchema.index({ doctor: 1, startTime: 1, endTime: 1 });
-appointmentSchema.index({ patient: 1, startTime: 1 }); // For patient's upcoming appointments
-appointmentSchema.index({ status: 1 }); // For querying by status
-// CHANGE: Added index for recurring appointments
-appointmentSchema.index({ recurringSeriesId: 1, seriesPosition: 1 });
+appointmentSchema.index({ patient: 1, startTime: 1 });
+appointmentSchema.index({ status: 1, startTime: 1 });
 
-// Virtual for appointment duration in minutes
-appointmentSchema.virtual('durationMinutes').get(function() {
-  return this.duration;
-});
+// Method to check if appointment can be cancelled based on cancellation rules
+appointmentSchema.methods.canCancel = function() {
+  const now = new Date();
+  const hoursBeforeAppointment = (this.startTime - now) / (1000 * 60 * 60);
+  
+  switch (this.cancellationRule) {
+    case '24h':
+      return hoursBeforeAppointment >= 24;
+    case '48h':
+      return hoursBeforeAppointment >= 48;
+    case '72h':
+      return hoursBeforeAppointment >= 72;
+    case 'custom':
+      return hoursBeforeAppointment >= this.customCancellationHours;
+    case 'none':
+      return true;
+    default:
+      return hoursBeforeAppointment >= 24;
+  }
+};
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 
-module.exports = {
-  Appointment
-};
+module.exports = Appointment;

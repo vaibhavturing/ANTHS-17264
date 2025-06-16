@@ -242,6 +242,173 @@ const appointmentController = {
     return ResponseUtil.success(res, { message: 'cleanupExpiredLocks not implemented yet' });
   }),
 
+  rescheduleAppointment: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { startTime, endTime, reason, checkWaitlist = true } = req.body;
+    
+    // Check if user has permission to reschedule this appointment
+    // This would include admin, the doctor, or the patient involved
+    const isAuthorized = await appointmentService.isUserAuthorizedForAppointment(
+      req.user.id, id, ['admin', 'doctor', 'patient']
+    );
+    
+    if (!isAuthorized) {
+      return ResponseUtil.error(
+        res, 
+        'You do not have permission to reschedule this appointment', 
+        403, 
+        'FORBIDDEN'
+      );
+    }
+    
+    try {
+      const updatedAppointment = await appointmentService.rescheduleAppointment(
+        id,
+        new Date(startTime),
+        new Date(endTime),
+        reason,
+        { 
+          checkWaitlist,
+          isAdmin: req.user.role === 'admin'
+        }
+      );
+      
+      return ResponseUtil.success(res, {
+        message: 'Appointment rescheduled successfully',
+        appointment: updatedAppointment
+      });
+    } catch (error) {
+      logger.error('Appointment rescheduling failed', {
+        appointmentId: id,
+        error: error.message,
+        stack: error.stack
+      });
+      
+      if (error instanceof AppointmentError) {
+        return ResponseUtil.error(
+          res,
+          error.message,
+          400,
+          error.code
+        );
+      }
+      
+      return ResponseUtil.error(
+        res,
+        'Failed to reschedule appointment',
+        500,
+        'SERVER_ERROR'
+      );
+    }
+  }),
+  
+  /**
+   * Cancel an appointment
+   * @route PUT /api/appointments/:id/cancel
+   */
+  cancelAppointment: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { reason, checkWaitlist = true } = req.body;
+    
+    // Check if user has permission to cancel this appointment
+    const isAuthorized = await appointmentService.isUserAuthorizedForAppointment(
+      req.user.id, id, ['admin', 'doctor', 'patient']
+    );
+    
+    if (!isAuthorized) {
+      return ResponseUtil.error(
+        res, 
+        'You do not have permission to cancel this appointment', 
+        403, 
+        'FORBIDDEN'
+      );
+    }
+    
+    try {
+      const cancelledAppointment = await appointmentService.cancelAppointment(
+        id,
+        reason,
+        { 
+          checkWaitlist,
+          isAdmin: req.user.role === 'admin',
+          forceCancel: req.body.forceCancel && req.user.role === 'admin'
+        }
+      );
+      
+      return ResponseUtil.success(res, {
+        message: 'Appointment cancelled successfully',
+        appointment: cancelledAppointment
+      });
+    } catch (error) {
+      logger.error('Appointment cancellation failed', {
+        appointmentId: id,
+        error: error.message,
+        stack: error.stack
+      });
+      
+      if (error instanceof AppointmentError) {
+        return ResponseUtil.error(
+          res,
+          error.message,
+          400,
+          error.code
+        );
+      }
+      
+      return ResponseUtil.error(
+        res,
+        'Failed to cancel appointment',
+        500,
+        'SERVER_ERROR'
+      );
+    }
+  }),
+  
+  /**
+   * Set doctor cancellation rules
+   * @route PUT /api/doctors/:id/cancellation-rules
+   */
+  setDoctorCancellationRules: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { defaultRule, customHours } = req.body;
+    
+    // Only admins and the doctor themselves can set cancellation rules
+    if (req.user.role !== 'admin' && req.user.id !== id) {
+      return ResponseUtil.error(
+        res,
+        'You do not have permission to set cancellation rules for this doctor',
+        403,
+        'FORBIDDEN'
+      );
+    }
+    
+    try {
+      const settings = await appointmentService.setDoctorCancellationRules(
+        id,
+        defaultRule,
+        customHours || null
+      );
+      
+      return ResponseUtil.success(res, {
+        message: 'Cancellation rules updated successfully',
+        settings
+      });
+    } catch (error) {
+      logger.error('Setting cancellation rules failed', {
+        doctorId: id,
+        error: error.message,
+        stack: error.stack
+      });
+      
+      return ResponseUtil.error(
+        res,
+        error.message || 'Failed to update cancellation rules',
+        error.code === 'SETTINGS_NOT_FOUND' ? 404 : 500,
+        error.code || 'SERVER_ERROR'
+      );
+    }
+  }),
+
   /**
    * Get patient appointments (stub)
    */
