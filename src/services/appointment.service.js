@@ -2,14 +2,16 @@ const Appointment = require('../models/appointment.model');
 const User = require('../models/user.model');
 const AppointmentType = require('../models/appointmentType.model');
 const Waitlist = require('../models/waitlist.model');
+const DoctorSettings = require('../models/doctorSettings.model');
 const scheduleService = require('./schedule.service');
 const availabilityService = require('./availability.service');
-const emailService = require('./email.service');
 const notificationService = require('./notification.service');
+const emailService = require('./email.service');
 const { AppointmentError } = require('../utils/errors');
 const logger = require('../utils/logger');
 const mongoose = require('mongoose');
 const moment = require('moment');
+const config = require('../config/config');
 
 const appointmentService = {
   /**
@@ -55,7 +57,25 @@ const appointmentService = {
 
       // Check for conflicting appointments
       const conflictingAppointments = await Appointment.countDocuments(query);
-      return conflictingAppointments === 0;
+      
+      // NEW: Also check if any slots are currently being held for waitlisted patients
+      const heldSlots = await Waitlist.countDocuments({
+        'heldSlot.doctorId': doctorId,
+        'heldSlot.heldUntil': { $gt: new Date() },
+        $or: [
+          // Held slot starts during the proposed time
+          { 'heldSlot.startTime': { $lt: endTime, $gte: startTime } },
+          // Held slot ends during the proposed time
+          { 'heldSlot.endTime': { $gt: startTime, $lte: endTime } },
+          // Held slot completely contains the proposed time
+          { 
+            'heldSlot.startTime': { $lte: startTime }, 
+            'heldSlot.endTime': { $gte: endTime } 
+          }
+        ]
+      });
+      
+      return conflictingAppointments === 0 && heldSlots === 0;
     } catch (error) {
       logger.error('Error checking appointment availability', {
         error: error.message,
@@ -64,6 +84,86 @@ const appointmentService = {
         endTime
       });
       throw new AppointmentError('Failed to check appointment availability', 'AVAILABILITY_CHECK_FAILED');
+    }
+  },
+
+  /**
+   * Create a new appointment
+   * @param {Object} appointmentData - The appointment data
+   * @returns {Promise<Object>} The created appointment
+   */
+  createAppointment: async (appointmentData) => {
+    try {
+      // Check availability
+      const isAvailable = await appointmentService.checkAvailability(
+        appointmentData.doctor,
+        appointmentData.startTime,
+        appointmentData.endTime
+      );
+      
+      if (!isAvailable) {
+        throw new AppointmentError('The requested time slot is not available', 'SLOT_UNAVAILABLE');
+      }
+      
+      // Create the appointment
+      const appointment = new Appointment(appointmentData);
+      await appointment.save();
+      
+      // Send confirmation notifications
+      // This would be implemented in the notification service
+      
+      return appointment;
+    } catch (error) {
+      logger.error('Error creating appointment', {
+        error: error.message,
+        appointmentData
+      });
+      
+      throw new AppointmentError(
+        error.message || 'Failed to create appointment',
+        error.code || 'APPOINTMENT_CREATION_FAILED'
+      );
+    }
+  },
+
+  /**
+   * Check if a user is authorized to access an appointment
+   * @param {string} userId - The user ID
+   * @param {string} appointmentId - The appointment ID
+   * @param {Array} allowedRoles - Roles that are allowed access
+   * @returns {Promise<boolean>} True if the user is authorized
+   */
+  isUserAuthorizedForAppointment: async (userId, appointmentId, allowedRoles = []) => {
+    try {
+      const appointment = await Appointment.findById(appointmentId);
+      
+      if (!appointment) {
+        return false;
+      }
+      
+      const user = await User.findById(userId).select('role');
+      
+      // Admin has full access
+      if (user.role === 'admin' || allowedRoles.includes('admin')) {
+        return true;
+      }
+      
+      // Check if user is the patient or doctor for this appointment
+      if (
+        (appointment.patient.toString() === userId && allowedRoles.includes('patient')) ||
+        (appointment.doctor.toString() === userId && allowedRoles.includes('doctor'))
+      ) {
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      logger.error('Error checking appointment authorization', {
+        error: error.message,
+        userId,
+        appointmentId
+      });
+      return false;
     }
   },
 
@@ -260,7 +360,9 @@ const appointmentService = {
         $or: [
           { preferredTimeOfDay: slotTimeOfDay },
           { preferredTimeOfDay: 'any' }
-        ]
+        ],
+        // NEW: Ensure the waitlist entry doesn't already have a held slot
+        heldSlot: null
       })
       .sort({ priority: -1, createdAt: 1 })
       .session(session || null)
@@ -292,6 +394,9 @@ const appointmentService = {
           entry.status = 'fulfilled';
           entry.offeredAppointments.push({
             appointmentId: newAppointment._id,
+            doctorId: doctorId,
+            startTime: slotStartTime,
+            endTime: slotEndTime,
             offeredAt: new Date(),
             status: 'accepted'
           });
@@ -306,26 +411,28 @@ const appointmentService = {
       }
       
       // If no auto-accept, offer the slot to the top priority patient
+      // UPDATED: This now uses the notifyWaitlistPatientAboutSlot function
       const topEntry = waitlistEntries[0];
-      topEntry.offeredAppointments.push({
-        appointmentId: null, // Will be set if they accept
-        offeredAt: new Date(),
-        status: 'pending'
-      });
       
-      await topEntry.save({ session: session || null });
+      // Create a unique slot ID
+      const slotId = `slot-${doctorId}-${Date.now()}`;
       
-      // Send notification about available slot
-      await notificationService.sendWaitlistSlotAvailableNotification(
-        topEntry.patient,
-        doctorId,
-        slotStartTime,
-        slotEndTime,
-        appointmentTypeId,
-        topEntry._id
+      // Notify the patient about the available slot
+      await notificationService.notifyWaitlistPatientAboutSlot(
+        topEntry._id,
+        {
+          doctorId,
+          startTime: slotStartTime,
+          endTime: slotEndTime,
+          slotId,
+          appointmentTypeId
+        },
+        {
+          responseTimeMinutes: config.WAITLIST_RESPONSE_TIME_MINUTES || 120
+        }
       );
       
-      return false;
+      return true; // We've successfully notified a patient
     } catch (error) {
       logger.error('Error checking waitlist for slot', {
         error: error.message,
@@ -347,7 +454,6 @@ const appointmentService = {
   setDoctorCancellationRules: async (doctorId, defaultRule, customHours = null) => {
     try {
       // This would update a doctor's settings document
-      // For now, we'll assume a doctor settings model exists
       const doctorSettings = await DoctorSettings.findOne({ doctor: doctorId });
       
       if (!doctorSettings) {

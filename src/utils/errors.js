@@ -1,74 +1,110 @@
 /**
- * Custom error classes for the application
+ * Custom error classes for better error handling
  */
 
-// Base application error
-class ApplicationError extends Error {
-  constructor(message, statusCode) {
+class AppError extends Error {
+  constructor(message, code = 'UNKNOWN_ERROR') {
     super(message);
+    this.code = code;
     this.name = this.constructor.name;
-    this.statusCode = statusCode || 500;
     Error.captureStackTrace(this, this.constructor);
   }
 }
 
-// 400 - Bad Request Error
-class ValidationError extends ApplicationError {
-  constructor(message) {
-    super(message || 'Validation error', 400);
+class ValidationError extends AppError {
+  constructor(message, code = 'VALIDATION_ERROR', details = null) {
+    super(message, code);
+    this.details = details;
   }
 }
 
-// 401 - Unauthorized Error
-class AuthenticationError extends ApplicationError {
-  constructor(message) {
-    super(message || 'Authentication failed', 401);
+class AuthenticationError extends AppError {
+  constructor(message, code = 'AUTHENTICATION_ERROR') {
+    super(message, code);
   }
 }
 
-// 403 - Forbidden Error
-class AuthorizationError extends ApplicationError {
-  constructor(message) {
-    super(message || 'You do not have permission to perform this action', 403);
+class AuthorizationError extends AppError {
+  constructor(message, code = 'AUTHORIZATION_ERROR') {
+    super(message, code);
   }
 }
 
-// 404 - Not Found Error
-class NotFoundError extends ApplicationError {
-  constructor(message) {
-    super(message || 'Resource not found', 404);
+class ResourceNotFoundError extends AppError {
+  constructor(message, code = 'RESOURCE_NOT_FOUND') {
+    super(message, code);
   }
 }
 
-// 409 - Conflict Error
-class ConflictError extends ApplicationError {
-  constructor(message) {
-    super(message || 'Resource conflict', 409);
+class DatabaseError extends AppError {
+  constructor(message, code = 'DATABASE_ERROR') {
+    super(message, code);
   }
 }
 
-// 429 - Too Many Requests
-class RateLimitError extends ApplicationError {
-  constructor(message) {
-    super(message || 'Too many requests, please try again later', 429);
+class AppointmentError extends AppError {
+  constructor(message, code = 'APPOINTMENT_ERROR') {
+    super(message, code);
   }
 }
 
-// 500 - Internal Server Error
-class InternalServerError extends ApplicationError {
-  constructor(message) {
-    super(message || 'Internal server error', 500);
+class ScheduleError extends AppError {
+  constructor(message, code = 'SCHEDULE_ERROR') {
+    super(message, code);
   }
 }
 
-// Export all error classes
+class InsuranceError extends AppError {
+  constructor(message, code = 'INSURANCE_ERROR') {
+    super(message, code);
+  }
+}
+
+class BillingError extends AppError {
+  constructor(message, code = 'BILLING_ERROR') {
+    super(message, code);
+  }
+}
+
+class AnalyticsError extends AppError {
+  constructor(message, code = 'ANALYTICS_ERROR') {
+    super(message, code);
+  }
+}
+
+class PrivacyError extends AppError {
+  constructor(message, code = 'PRIVACY_ERROR') {
+    super(message, code);
+  }
+}
+
+// NEW: Waitlist error class
+class WaitlistError extends AppError {
+  constructor(message, code = 'WAITLIST_ERROR') {
+    super(message, code);
+  }
+}
+
+// NEW: Notification error class
+class NotificationError extends AppError {
+  constructor(message, code = 'NOTIFICATION_ERROR') {
+    super(message, code);
+  }
+}
+
 module.exports = {
-  ApplicationError,
+  AppError,
   ValidationError,
   AuthenticationError,
   AuthorizationError,
-  NotFoundError,
-  ConflictError,
-  RateLimitError,
-  InternalServerError
+  ResourceNotFoundError,
+  DatabaseError,
+  AppointmentError,
+  ScheduleError,
+  InsuranceError,
+  BillingError,
+  AnalyticsError,
+  PrivacyError,
+  WaitlistError,
+  NotificationError
 };

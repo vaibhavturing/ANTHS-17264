@@ -65,16 +65,68 @@ const waitlistSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // If patient was offered an appointment but declined
+  // NEW FIELDS FOR SLOT HOLDING
+  // Currently held slot information
+  heldSlot: {
+    slotId: String,
+    doctorId: mongoose.Schema.Types.ObjectId,
+    startTime: Date,
+    endTime: Date,
+    heldUntil: Date, // Time until the slot is held
+    appointmentTypeId: mongoose.Schema.Types.ObjectId
+  },
+  // Communication preferences
+  contactPreferences: {
+    email: {
+      type: Boolean,
+      default: true
+    },
+    sms: {
+      type: Boolean,
+      default: true
+    },
+    preferredMethod: {
+      type: String,
+      enum: ['email', 'sms', 'both'],
+      default: 'both'
+    }
+  },
+  // Phone number for SMS notifications - could also be fetched from patient profile
+  phoneNumber: {
+    type: String,
+    validate: {
+      validator: function(v) {
+        return /^\+?[0-9]{10,15}$/.test(v);
+      },
+      message: props => `${props.value} is not a valid phone number!`
+    }
+  },
+  // Track all offered slots and their status
   offeredAppointments: [{
     appointmentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Appointment'
     },
+    doctorId: mongoose.Schema.Types.ObjectId,
+    startTime: Date,
+    endTime: Date,
     offeredAt: Date,
+    respondBy: Date, // Deadline to respond
+    notificationSent: {
+      email: {
+        sent: Boolean,
+        sentAt: Date,
+        deliveryStatus: String
+      },
+      sms: {
+        sent: Boolean,
+        sentAt: Date,
+        deliveryStatus: String
+      }
+    },
     status: {
       type: String,
-      enum: ['pending', 'accepted', 'declined', 'expired'],
+      enum: ['pending', 'accepted', 'declined', 'expired', 'cancelled'],
       default: 'pending'
     }
   }]
@@ -84,6 +136,7 @@ const waitlistSchema = new mongoose.Schema({
 waitlistSchema.index({ doctor: 1, status: 1, priority: -1 });
 waitlistSchema.index({ patient: 1, status: 1 });
 waitlistSchema.index({ dateRangeStart: 1, dateRangeEnd: 1, status: 1 });
+waitlistSchema.index({ 'heldSlot.heldUntil': 1 }, { expireAfterSeconds: 0 }); // For TTL index to automatically expire held slots
 
 const Waitlist = mongoose.model('Waitlist', waitlistSchema);
 
