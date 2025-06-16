@@ -11,6 +11,87 @@ const { NotFoundError } = require('../utils/errors/NotFoundError');
 const auditLogger = require('../utils/audit-logger');
 const patientService = require('../services/patient.service');
 
+/**
+ * Patient profile controller
+ */
+const patientController = {
+  /**
+   * Create a new patient profile
+   * @route POST /api/patients
+   */
+  createPatient: asyncHandler(async (req, res) => {
+    const { userId } = req.user;
+    const patientData = req.body;
+    
+    const patient = await patientService.createPatient(patientData, userId);
+    
+    return ResponseUtil.success(res, { 
+      message: 'Patient profile created successfully',
+      patient 
+    }, 201);
+  }),
+
+  /**
+   * Get patient by ID
+   * @route GET /api/patients/:patientId
+   */
+  getPatientById: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const patient = await patientService.getPatientById(patientId);
+    
+    return ResponseUtil.success(res, { patient });
+  }),
+
+  /**
+   * Get patient by user ID
+   * @route GET /api/patients/user/:userId
+   */
+  getPatientByUserId: asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const patient = await patientService.getPatientByUserId(userId);
+    
+    return ResponseUtil.success(res, { patient });
+  }),
+
+  /**
+   * Get current user's patient profile
+   * @route GET /api/patients/me
+   */
+  getMyProfile: asyncHandler(async (req, res) => {
+    const { userId } = req.user;
+    const patient = await patientService.getPatientByUserId(userId);
+    
+    return ResponseUtil.success(res, { patient });
+  }),
+
+  /**
+   * Update patient profile
+   * @route PUT /api/patients/:patientId
+   */
+  updatePatient: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const updateData = req.body;
+    
+    const patient = await patientService.updatePatient(patientId, updateData);
+    
+    return ResponseUtil.success(res, { 
+      message: 'Patient profile updated successfully',
+      patient 
+    });
+  }),
+
+  /**
+   * Get patient's complete medical profile with all records
+   * @route GET /api/patients/:patientId/profile
+   */
+  getPatientProfile: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const profile = await patientService.getPatientProfile(patientId);
+    
+    return ResponseUtil.success(res, { profile });
+  })
+};
+
 
 /**
  * Get all patients with pagination and filtering

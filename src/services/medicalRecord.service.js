@@ -8,703 +8,294 @@ const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const fs = require('fs').promises;
 const path = require('path');
+const Allergy = require('../models/allergy.model');
+const Medication = require('../models/medication.model');
+const VisitNote = require('../models/visitNote.model');
+const LabResult = require('../models/labResult.model');
+const Patient = require('../models/patient.model');
 
 /**
- * Medical Records Service
- * Handles operations related to patient medical records
+ * Service for managing medical records
  */
 const medicalRecordService = {
   /**
-   * Create a new medical record
-   * @param {Object} recordData - Medical record data
-   * @param {Object} user - Current user
-   * @param {Object} fileData - Optional file attachment data
-   * @returns {Promise<Object>} Created medical record
+   * Create a medical history entry
+   * @param {Object} historyData - Medical history data
+   * @returns {Promise<Object>} Created medical history record
    */
-  createMedicalRecord: async (recordData, user, fileData = null) => {
+  createMedicalHistory: async (historyData) => {
     try {
-      // Check if patient exists
-      const patient = await Patient.findById(recordData.patient);
-      if (!patient) {
+      // Verify patient exists
+      const patientExists = await Patient.findById(historyData.patient);
+      if (!patientExists) {
         throw new NotFoundError('Patient not found');
       }
-
-      // Create the medical record
-      const medicalRecord = new MedicalRecord({
-        ...recordData,
-        provider: recordData.provider || user._id,
-      });
-
-      // Set default access controls (provider gets admin access)
-      medicalRecord.accessControls = [
-        {
-          user: user._id,
-          accessLevel: 'admin',
-          grantedBy: user._id,
-          grantedAt: Date.now()
-        }
-      ];
-
-      // Add attachment if provided
-      if (fileData) {
-        medicalRecord.attachments.push({
-          ...fileData,
-          uploadedBy: user._id
-        });
-      }
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: user._id,
-        action: 'create',
-        ipAddress: user.ipAddress,
-        userAgent: user.userAgent,
-        details: `Created ${recordData.category} record: ${recordData.title}`
-      });
-
-      // Save the record
-      await medicalRecord.save();
-
-      logger.info(`Medical record created for patient ${patient._id}`, {
-        userId: user._id,
-        patientId: patient._id,
-        recordId: medicalRecord._id
-      });
-
-      return medicalRecord;
+      
+      const history = new MedicalHistory(historyData);
+      await history.save();
+      
+      return history;
     } catch (error) {
-      logger.error('Error creating medical record', {
+      logger.error('Error creating medical history', {
         error: error.message,
-        userId: user?._id,
-        patientId: recordData?.patient
+        patientId: historyData.patient
       });
       throw error;
     }
   },
-
+  
   /**
-   * Get a medical record by ID with access control
-   * @param {string} recordId - Medical record ID
-   * @param {Object} user - Current user
-   * @returns {Promise<Object>} Medical record
+   * Get medical history records for a patient
+   * @param {String} patientId - Patient ID
+   * @returns {Promise<Array>} Medical history records
    */
-  getMedicalRecordById: async (recordId, user) => {
+  getMedicalHistory: async (patientId) => {
     try {
-      // Get the record with patient info and provider info
-      const medicalRecord = await MedicalRecord.findById(recordId)
-        .populate('patient', 'firstName lastName gender dateOfBirth')
-        .populate('provider', 'firstName lastName role')
-        .populate('accessControls.user', 'firstName lastName role email');
-
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Check if user has access permissions
-      // Admins have access to all records
-      // Doctors/providers have access to records they created
-      // Other users need specific access granted
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider && 
-                        medicalRecord.provider._id.toString() === user._id.toString();
-      const isPatient = medicalRecord.patient && 
-                        medicalRecord.patient._id.toString() === user._id.toString();
-      const hasGrantedAccess = medicalRecord.hasAccess(user._id, 'read');
-
-      if (!isAdmin && !isProvider && !isPatient && !hasGrantedAccess) {
-        throw new AuthorizationError('You do not have permission to view this medical record');
-      }
-
-      // Add audit log entry for viewing the record
-      medicalRecord.addAuditLogEntry({
-        user: user._id,
-        action: 'view',
-        ipAddress: user.ipAddress,
-        userAgent: user.userAgent
-      });
-
-      await medicalRecord.save();
-
-      logger.info(`Medical record ${recordId} accessed`, {
-        userId: user._id,
-        recordId
-      });
-
-      return medicalRecord;
+      const records = await MedicalHistory.find({ patient: patientId })
+        .populate('diagnosedBy', 'firstName lastName')
+        .populate('relatedLabResults')
+        .sort({ diagnosisDate: -1 });
+      
+      return records;
     } catch (error) {
-      logger.error(`Error retrieving medical record ${recordId}`, {
+      logger.error('Error fetching medical history', {
         error: error.message,
-        userId: user?._id
+        patientId
       });
       throw error;
     }
   },
-
+  
   /**
-   * Update a medical record
-   * @param {string} recordId - Medical record ID
-   * @param {Object} updateData - Data to update
-   * @param {Object} user - Current user
-   * @returns {Promise<Object>} Updated medical record
+   * Update a medical history record
+   * @param {String} recordId - Record ID
+   * @param {Object} updateData - Updated medical history data
+   * @returns {Promise<Object>} Updated record
    */
-  updateMedicalRecord: async (recordId, updateData, user) => {
+  updateMedicalHistory: async (recordId, updateData) => {
     try {
-      const medicalRecord = await MedicalRecord.findById(recordId);
-
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Check if user has write access
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider.toString() === user._id.toString();
-      const hasWriteAccess = medicalRecord.hasAccess(user._id, 'write');
-
-      if (!isAdmin && !isProvider && !hasWriteAccess) {
-        throw new AuthorizationError('You do not have permission to update this medical record');
-      }
-
-      // Update the record with the provided data
-      Object.keys(updateData).forEach(key => {
-        medicalRecord[key] = updateData[key];
-      });
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: user._id,
-        action: 'update',
-        ipAddress: user.ipAddress,
-        userAgent: user.userAgent,
-        details: `Updated medical record: ${Object.keys(updateData).join(', ')}`
-      });
-
-      await medicalRecord.save();
-
-      logger.info(`Medical record ${recordId} updated`, {
-        userId: user._id,
+      const record = await MedicalHistory.findByIdAndUpdate(
         recordId,
-        updatedFields: Object.keys(updateData)
-      });
-
-      return medicalRecord;
-    } catch (error) {
-      logger.error(`Error updating medical record ${recordId}`, {
-        error: error.message,
-        userId: user?._id
-      });
-      throw error;
-    }
-  },
-
-  /**
-   * Delete a medical record (soft delete)
-   * @param {string} recordId - Medical record ID
-   * @param {Object} user - Current user
-   * @returns {Promise<Object>} Result message
-   */
-  deleteMedicalRecord: async (recordId, user) => {
-    try {
-      const medicalRecord = await MedicalRecord.findById(recordId);
-
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Check if user has admin access to the record
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider.toString() === user._id.toString();
-      const hasAdminAccess = medicalRecord.hasAccess(user._id, 'admin');
-
-      if (!isAdmin && !isProvider && !hasAdminAccess) {
-        throw new AuthorizationError('You do not have permission to delete this medical record');
-      }
-
-      // Soft delete
-      medicalRecord.isDeleted = true;
-      medicalRecord.deletedAt = Date.now();
-      medicalRecord.deletedBy = user._id;
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: user._id,
-        action: 'delete',
-        ipAddress: user.ipAddress,
-        userAgent: user.userAgent,
-        details: 'Medical record deleted'
-      });
-
-      await medicalRecord.save();
-
-      logger.info(`Medical record ${recordId} deleted`, {
-        userId: user._id,
-        recordId
-      });
-
-      return { message: 'Medical record successfully deleted' };
-    } catch (error) {
-      logger.error(`Error deleting medical record ${recordId}`, {
-        error: error.message,
-        userId: user?._id
-      });
-      throw error;
-    }
-  },
-
-  /**
-   * Add a file attachment to a medical record
-   * @param {string} recordId - Medical record ID
-   * @param {Object} fileData - File data
-   * @param {Object} user - Current user
-   * @returns {Promise<Object>} Updated medical record
-   */
-  addAttachment: async (recordId, fileData, user) => {
-    try {
-      const medicalRecord = await MedicalRecord.findById(recordId);
-
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Check if user has write access
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider.toString() === user._id.toString();
-      const hasWriteAccess = medicalRecord.hasAccess(user._id, 'write');
-
-      if (!isAdmin && !isProvider && !hasWriteAccess) {
-        throw new AuthorizationError('You do not have permission to add attachments to this record');
-      }
-
-      // Add the new attachment
-      medicalRecord.attachments.push({
-        ...fileData,
-        uploadedBy: user._id
-      });
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: user._id,
-        action: 'update',
-        ipAddress: user.ipAddress,
-        userAgent: user.userAgent,
-        details: `Added attachment: ${fileData.originalName}`
-      });
-
-      await medicalRecord.save();
-
-      logger.info(`Attachment added to medical record ${recordId}`, {
-        userId: user._id,
-        recordId,
-        filename: fileData.originalName
-      });
-
-      return medicalRecord;
-    } catch (error) {
-      logger.error(`Error adding attachment to record ${recordId}`, {
-        error: error.message,
-        userId: user?._id
-      });
-      throw error;
-    }
-  },
-
-  /**
-   * Remove a file attachment from a medical record
-   * @param {string} recordId - Medical record ID
-   * @param {string} attachmentId - Attachment ID
-   * @param {Object} user - Current user
-   * @returns {Promise<Object>} Updated medical record
-   */
-  removeAttachment: async (recordId, attachmentId, user) => {
-    try {
-      const medicalRecord = await MedicalRecord.findById(recordId);
-
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Check if user has write access
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider.toString() === user._id.toString();
-      const hasWriteAccess = medicalRecord.hasAccess(user._id, 'write');
-
-      if (!isAdmin && !isProvider && !hasWriteAccess) {
-        throw new AuthorizationError('You do not have permission to remove attachments from this record');
-      }
-
-      // Find the attachment
-      const attachment = medicalRecord.attachments.id(attachmentId);
-      if (!attachment) {
-        throw new NotFoundError('Attachment not found');
-      }
-
-      // Store the file path for removal
-      const filePath = attachment.path;
-
-      // Remove the attachment from the record
-      medicalRecord.attachments.pull(attachmentId);
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: user._id,
-        action: 'update',
-        ipAddress: user.ipAddress,
-        userAgent: user.userAgent,
-        details: `Removed attachment: ${attachment.originalName}`
-      });
-
-      await medicalRecord.save();
-
-      // Delete the actual file from storage
-      try {
-        await fs.unlink(filePath);
-      } catch (fileError) {
-        logger.warn(`Failed to delete file at ${filePath}`, {
-          error: fileError.message
-        });
-        // Continue even if file deletion fails
-      }
-
-      logger.info(`Attachment removed from medical record ${recordId}`, {
-        userId: user._id,
-        recordId,
-        attachmentId
-      });
-
-      return medicalRecord;
-    } catch (error) {
-      logger.error(`Error removing attachment from record ${recordId}`, {
-        error: error.message,
-        userId: user?._id
-      });
-      throw error;
-    }
-  },
-
-  /**
-   * Grant access to a medical record
-   * @param {string} recordId - Medical record ID
-   * @param {string} userId - User ID to grant access to
-   * @param {string} accessLevel - Access level (read, write, admin)
-   * @param {Object} currentUser - User granting access
-   * @param {Object} options - Additional options (reason, expiration)
-   * @returns {Promise<Object>} Updated medical record
-   */
-  grantAccess: async (recordId, userId, accessLevel, currentUser, options = {}) => {
-    try {
-      const { reason = null, expiresAt = null } = options;
-
-      const medicalRecord = await MedicalRecord.findById(recordId);
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Verify the target user exists
-      const targetUser = await User.findById(userId);
-      if (!targetUser) {
-        throw new NotFoundError('User not found');
-      }
-
-      // Check if current user has admin access to the record
-      const isAdmin = currentUser.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider.toString() === currentUser._id.toString();
-      const hasAdminAccess = medicalRecord.hasAccess(currentUser._id, 'admin');
-
-      if (!isAdmin && !isProvider && !hasAdminAccess) {
-        throw new AuthorizationError('You do not have permission to share this medical record');
-      }
-
-      // Grant access
-      medicalRecord.grantAccess(
-        userId,
-        accessLevel,
-        currentUser._id,
-        reason,
-        expiresAt ? new Date(expiresAt) : null
+        updateData,
+        { new: true, runValidators: true }
       );
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: currentUser._id,
-        action: 'share',
-        ipAddress: currentUser.ipAddress,
-        userAgent: currentUser.userAgent,
-        details: `Granted ${accessLevel} access to user ${targetUser.email}`
-      });
-
-      await medicalRecord.save();
-
-      logger.info(`Access granted to medical record ${recordId}`, {
-        userId: currentUser._id,
-        recordId,
-        targetUserId: userId,
-        accessLevel
-      });
-
-      return medicalRecord;
+      
+      if (!record) {
+        throw new NotFoundError('Medical history record not found');
+      }
+      
+      return record;
     } catch (error) {
-      logger.error(`Error granting access to record ${recordId}`, {
+      logger.error('Error updating medical history record', {
         error: error.message,
-        userId: currentUser?._id
+        recordId
       });
       throw error;
     }
   },
-
+  
   /**
-   * Revoke access to a medical record
-   * @param {string} recordId - Medical record ID
-   * @param {string} userId - User ID to revoke access from
-   * @param {Object} currentUser - User revoking access
-   * @returns {Promise<Object>} Updated medical record
+   * Create an allergy record
+   * @param {Object} allergyData - Allergy data
+   * @returns {Promise<Object>} Created allergy record
    */
-  revokeAccess: async (recordId, userId, currentUser) => {
+  createAllergy: async (allergyData) => {
     try {
-      const medicalRecord = await MedicalRecord.findById(recordId);
-      if (!medicalRecord || medicalRecord.isDeleted) {
-        throw new NotFoundError('Medical record not found');
-      }
-
-      // Check if current user has admin access to the record
-      const isAdmin = currentUser.roles.some(role => role.name === 'admin');
-      const isProvider = medicalRecord.provider.toString() === currentUser._id.toString();
-      const hasAdminAccess = medicalRecord.hasAccess(currentUser._id, 'admin');
-
-      if (!isAdmin && !isProvider && !hasAdminAccess) {
-        throw new AuthorizationError('You do not have permission to modify access to this medical record');
-      }
-
-      // Get user info for logging
-      const targetUser = await User.findById(userId).select('email');
-
-      // Revoke access
-      medicalRecord.revokeAccess(userId);
-
-      // Add audit log entry
-      medicalRecord.addAuditLogEntry({
-        user: currentUser._id,
-        action: 'share',
-        ipAddress: currentUser.ipAddress,
-        userAgent: currentUser.userAgent,
-        details: `Revoked access from user ${targetUser?.email || userId}`
-      });
-
-      await medicalRecord.save();
-
-      logger.info(`Access revoked from medical record ${recordId}`, {
-        userId: currentUser._id,
-        recordId,
-        targetUserId: userId
-      });
-
-      return medicalRecord;
-    } catch (error) {
-      logger.error(`Error revoking access from record ${recordId}`, {
-        error: error.message,
-        userId: currentUser?._id
-      });
-      throw error;
-    }
-  },
-
-  /**
-   * Get a patient's medical records with filtering
-   * @param {string} patientId - Patient ID
-   * @param {Object} filters - Filter criteria
-   * @param {Object} user - Current user
-   * @returns {Promise<Object>} Paginated medical records
-   */
-  getPatientMedicalRecords: async (patientId, filters = {}, user) => {
-    try {
-      const {
-        category,
-        startDate,
-        endDate,
-        searchTerm,
-        page = 1,
-        limit = 20,
-        sortBy = 'recordDate',
-        sortOrder = 'desc'
-      } = filters;
-
       // Verify patient exists
-      const patient = await Patient.findById(patientId);
-      if (!patient) {
+      const patientExists = await Patient.findById(allergyData.patient);
+      if (!patientExists) {
         throw new NotFoundError('Patient not found');
       }
-
-      // Check if user has permission to view patient records
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = user.roles.some(role => ['doctor', 'nurse'].includes(role.name));
-      const isPatient = user._id.toString() === patientId;
-
-      if (!isAdmin && !isProvider && !isPatient) {
-        throw new AuthorizationError('You do not have permission to view this patient\'s records');
-      }
-
-      // Build query
-      let query = MedicalRecord.find({ patient: patientId, isDeleted: false });
-
-      // Apply filters
-      if (category) {
-        query = query.byCategory(category);
-      }
-
-      if (startDate && endDate) {
-        query = query.byDateRange(new Date(startDate), new Date(endDate));
-      }
-
-      if (searchTerm) {
-        query = query.find({ $text: { $search: searchTerm } });
-      }
-
-      // Count total matching documents
-      const totalCount = await MedicalRecord.countDocuments(query);
-
-      // Apply pagination and sorting
-      const sortDirection = sortOrder === 'asc' ? 1 : -1;
-      query = query
-        .sort({ [sortBy]: sortDirection })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .populate('provider', 'firstName lastName role');
-
-      // Execute query
-      const records = await query.exec();
-
-      // Add audit log entry for each record viewed
-      if (records.length > 0) {
-        // Bulk insert audit log entries for all records viewed
-        const bulkOps = records.map(record => {
-          return {
-            updateOne: {
-              filter: { _id: record._id },
-              update: {
-                $push: {
-                  auditLog: {
-                    user: user._id,
-                    action: 'view',
-                    timestamp: Date.now(),
-                    ipAddress: user.ipAddress,
-                    userAgent: user.userAgent,
-                    details: 'Viewed in patient record list'
-                  }
-                }
-              }
-            }
-          };
-        });
-
-        // Execute the bulk operations
-        await MedicalRecord.bulkWrite(bulkOps);
-
-        logger.info(`Medical records for patient ${patientId} accessed`, {
-          userId: user._id,
-          patientId,
-          count: records.length
-        });
-      }
-
-      // Return paginated results
-      return {
-        records,
-        pagination: {
-          totalRecords: totalCount,
-          totalPages: Math.ceil(totalCount / limit),
-          currentPage: page,
-          perPage: limit
-        }
-      };
+      
+      const allergy = new Allergy(allergyData);
+      await allergy.save();
+      
+      return allergy;
     } catch (error) {
-      logger.error(`Error retrieving medical records for patient ${patientId}`, {
+      logger.error('Error creating allergy record', {
         error: error.message,
-        userId: user?._id
+        patientId: allergyData.patient
       });
       throw error;
     }
   },
-
+  
   /**
-   * Get medical records for a time period (timeline view)
-   * @param {string} patientId - Patient ID
-   * @param {Object} timelineParams - Timeline parameters
-   * @param {Object} user - Current user
-   * @returns {Promise<Array>} Medical records for the timeline
+   * Get allergies for a patient
+   * @param {String} patientId - Patient ID
+   * @returns {Promise<Array>} Allergy records
    */
-  getMedicalRecordTimeline: async (patientId, timelineParams = {}, user) => {
+  getAllergies: async (patientId) => {
     try {
-      const {
-        startDate = new Date(new Date().setFullYear(new Date().getFullYear() - 1)),
-        endDate = new Date(),
-        categories = Object.values(RECORD_CATEGORIES)
-      } = timelineParams;
-
+      const allergies = await Allergy.find({ patient: patientId })
+        .populate('reportedBy', 'firstName lastName')
+        .sort({ createdAt: -1 });
+      
+      return allergies;
+    } catch (error) {
+      logger.error('Error fetching allergies', {
+        error: error.message,
+        patientId
+      });
+      throw error;
+    }
+  },
+  
+  /**
+   * Create a medication record
+   * @param {Object} medicationData - Medication data
+   * @returns {Promise<Object>} Created medication record
+   */
+  createMedication: async (medicationData) => {
+    try {
       // Verify patient exists
-      const patient = await Patient.findById(patientId);
-      if (!patient) {
+      const patientExists = await Patient.findById(medicationData.patient);
+      if (!patientExists) {
         throw new NotFoundError('Patient not found');
       }
-
-      // Check if user has permission to view patient records
-      const isAdmin = user.roles.some(role => role.name === 'admin');
-      const isProvider = user.roles.some(role => ['doctor', 'nurse'].includes(role.name));
-      const isPatient = user._id.toString() === patientId;
-
-      if (!isAdmin && !isProvider && !isPatient) {
-        throw new AuthorizationError('You do not have permission to view this patient\'s records');
-      }
-
-      // Query for timeline records
-      const records = await MedicalRecord.find({
-        patient: patientId,
-        category: { $in: categories },
-        recordDate: { $gte: startDate, $lte: endDate },
-        isDeleted: false
-      })
-      .sort({ recordDate: 1 })
-      .select('title category recordDate provider')
-      .populate('provider', 'firstName lastName role')
-      .exec();
-
-      // Log the access
-      logger.info(`Medical record timeline for patient ${patientId} accessed`, {
-        userId: user._id,
-        patientId,
-        startDate,
-        endDate
-      });
-
-      // Group records by month for timeline view
-      const timeline = records.reduce((result, record) => {
-        const date = new Date(record.recordDate);
-        const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        
-        if (!result[monthYear]) {
-          result[monthYear] = [];
-        }
-        
-        result[monthYear].push({
-          id: record._id,
-          title: record.title,
-          category: record.category,
-          date: record.recordDate,
-          provider: record.provider ? `${record.provider.firstName} ${record.provider.lastName}` : 'Unknown Provider'
-        });
-        
-        return result;
-      }, {});
-
-      return {
-        timeline,
-        timeRange: {
-          start: startDate,
-          end: endDate
-        },
-        categories: categories
-      };
+      
+      const medication = new Medication(medicationData);
+      await medication.save();
+      
+      return medication;
     } catch (error) {
-      logger.error(`Error retrieving medical record timeline for patient ${patientId}`, {
+      logger.error('Error creating medication record', {
         error: error.message,
-        userId: user?._id
+        patientId: medicationData.patient
+      });
+      throw error;
+    }
+  },
+  
+  /**
+   * Get medications for a patient
+   * @param {String} patientId - Patient ID
+   * @returns {Promise<Array>} Medication records
+   */
+  getMedications: async (patientId) => {
+    try {
+      const medications = await Medication.find({ patient: patientId })
+        .populate('prescribedBy', 'firstName lastName')
+        .populate('relatedCondition')
+        .sort({ startDate: -1 });
+      
+      return medications;
+    } catch (error) {
+      logger.error('Error fetching medications', {
+        error: error.message,
+        patientId
+      });
+      throw error;
+    }
+  },
+  
+  /**
+   * Create a visit note
+   * @param {Object} noteData - Visit note data
+   * @returns {Promise<Object>} Created visit note
+   */
+  createVisitNote: async (noteData) => {
+    try {
+      // Verify patient exists
+      const patientExists = await Patient.findById(noteData.patient);
+      if (!patientExists) {
+        throw new NotFoundError('Patient not found');
+      }
+      
+      const note = new VisitNote(noteData);
+      await note.save();
+      
+      return note;
+    } catch (error) {
+      logger.error('Error creating visit note', {
+        error: error.message,
+        patientId: noteData.patient
+      });
+      throw error;
+    }
+  },
+  
+  /**
+   * Get visit notes for a patient
+   * @param {String} patientId - Patient ID
+   * @returns {Promise<Array>} Visit note records
+   */
+  getVisitNotes: async (patientId) => {
+    try {
+      const notes = await VisitNote.find({ patient: patientId })
+        .populate('provider', 'firstName lastName')
+        .populate('signedBy', 'firstName lastName')
+        .populate({
+          path: 'prescriptions',
+          select: 'name dosage frequency'
+        })
+        .populate({
+          path: 'labOrders',
+          select: 'testName orderDate status'
+        })
+        .sort({ visitDate: -1 });
+      
+      return notes;
+    } catch (error) {
+      logger.error('Error fetching visit notes', {
+        error: error.message,
+        patientId
+      });
+      throw error;
+    }
+  },
+  
+  /**
+   * Create a lab result record
+   * @param {Object} labData - Lab result data
+   * @returns {Promise<Object>} Created lab result record
+   */
+  createLabResult: async (labData) => {
+    try {
+      // Verify patient exists
+      const patientExists = await Patient.findById(labData.patient);
+      if (!patientExists) {
+        throw new NotFoundError('Patient not found');
+      }
+      
+      const labResult = new LabResult(labData);
+      await labResult.save();
+      
+      // If this lab result is linked to a diagnosis, update the diagnosis to include this lab result
+      if (labData.relatedDiagnosis) {
+        await MedicalHistory.findByIdAndUpdate(
+          labData.relatedDiagnosis,
+          { $addToSet: { relatedLabResults: labResult._id } }
+        );
+      }
+      
+      return labResult;
+    } catch (error) {
+      logger.error('Error creating lab result', {
+        error: error.message,
+        patientId: labData.patient
+      });
+      throw error;
+    }
+  },
+  
+  /**
+   * Get lab results for a patient
+   * @param {String} patientId - Patient ID
+   * @returns {Promise<Array>} Lab result records
+   */
+  getLabResults: async (patientId) => {
+    try {
+      const labResults = await LabResult.find({ patient: patientId })
+        .populate('orderedBy', 'firstName lastName')
+        .populate('relatedDiagnosis')
+        .sort({ orderDate: -1 });
+      
+      return labResults;
+    } catch (error) {
+      logger.error('Error fetching lab results', {
+        error: error.message,
+        patientId
       });
       throw error;
     }

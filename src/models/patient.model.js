@@ -2,160 +2,183 @@
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
 
+// Schema for patient basic information
 const patientSchema = new mongoose.Schema({
-  user: {
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    unique: true
   },
   dateOfBirth: {
     type: Date,
-    required: true
+    required: true,
+    // Encrypt sensitive data
+    set: function(dob) {
+      return encryptField(dob.toString());
+    },
+    get: function(dob) {
+      return decryptField(dob);
+    }
   },
   gender: {
     type: String,
     enum: ['male', 'female', 'other', 'prefer_not_to_say'],
     required: true
   },
-  contactNumber: {
+  contactPhone: {
     type: String,
-    required: true
-  },
-  address: {
-    street: String,
-    city: String,
-    state: String,
-    zipCode: String,
-    country: String
+    required: true,
+    set: function(phone) {
+      return encryptField(phone);
+    },
+    get: function(phone) {
+      return decryptField(phone);
+    }
   },
   emergencyContact: {
-    name: String,
-    relationship: String,
-    phoneNumber: String
-  },
-  medicalHistory: {
-    allergies: [String],
-    chronicConditions: [String],
-    currentMedications: [{
-      name: String,
-      dosage: String,
-      frequency: String
-    }],
-    pastSurgeries: [{
-      procedure: String,
-      date: Date,
-      notes: String
-    }]
-  },
-  insuranceInfo: {
-    provider: String,
-    policyNumber: String,
-    groupNumber: String,
-    primaryInsured: String,
-    relationship: String,
-    expirationDate: Date
-  },
-  // New fields for appointment integration
-  preferredDoctors: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Doctor'
-  }],
-  preferredTimeSlots: [{
-    dayOfWeek: {
+    name: {
       type: String,
-      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      required: true
     },
-    startTime: String, // Format: "HH:MM" in 24-hour format
-    endTime: String    // Format: "HH:MM" in 24-hour format
-  }],
-  appointmentHistory: [{
-    appointmentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Appointment'
-    },
-    status: {
+    relationship: {
       type: String,
-      enum: ['scheduled', 'completed', 'cancelled', 'no_show']
+      required: true
     },
-    date: Date
-  }],
-  noShowCount: {
-    type: Number,
-    default: 0
-  },
-  consentRecords: [{
-    type: { type: String },
-    givenDate: Date,
-    expirationDate: Date,
-    documentPath: String
-  }],
-  communicationPreferences: {
-    appointmentReminders: {
-      email: { type: Boolean, default: true },
-      sms: { type: Boolean, default: false },
-      push: { type: Boolean, default: false }
-    },
-    marketingCommunications: {
-      email: { type: Boolean, default: false },
-      sms: { type: Boolean, default: false }
-    },
-    preferredLanguage: {
+    phone: {
       type: String,
-      default: 'English'
+      required: true,
+      set: function(phone) {
+        return encryptField(phone);
+      },
+      get: function(phone) {
+        return decryptField(phone);
+      }
     }
+  },
+  address: {
+    street: {
+      type: String,
+      required: true,
+      set: function(val) {
+        return encryptField(val);
+      },
+      get: function(val) {
+        return decryptField(val);
+      }
+    },
+    city: {
+      type: String,
+      required: true
+    },
+    state: {
+      type: String,
+      required: true
+    },
+    zipCode: {
+      type: String,
+      required: true
+    },
+    country: {
+      type: String,
+      required: true,
+      default: 'USA'
+    }
+  },
+  primaryPhysician: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  insuranceInfo: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PatientInsurance'
+  }],
+  // Tracking consent for data sharing and communications
+  consents: [{
+    type: { 
+      type: String, 
+      enum: ['data_sharing', 'research', 'marketing', 'telehealth'],
+      required: true
+    },
+    given: {
+      type: Boolean,
+      default: false
+    },
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    expirationDate: {
+      type: Date
+    },
+    documentReference: {
+      type: String
+    }
+  }]
+}, {
+  ...baseSchema.baseOptions,
+  toJSON: { 
+    getters: true,
+    virtuals: true
+  },
+  toObject: { 
+    getters: true,
+    virtuals: true
   }
-}, baseSchema.baseOptions);
+});
 
-// Index for efficient searching by user ID
-patientSchema.index({ user: 1 });
+// Encryption/decryption utility functions using the app's encryption key
+function encryptField(text) {
+  if (!text) return text;
+  try {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(
+      'aes-256-cbc', 
+      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
+      iv
+    );
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return `${iv.toString('hex')}:${encrypted}`;
+  } catch (error) {
+    console.error('Encryption error:', error);
+    return text; // Fallback in case of error
+  }
+}
 
-// Index for searching by preferred doctors
-patientSchema.index({ preferredDoctors: 1 });
+function decryptField(encryptedText) {
+  if (!encryptedText || !encryptedText.includes(':')) return encryptedText;
+  try {
+    const [ivHex, encrypted] = encryptedText.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = crypto.createDecipheriv(
+      'aes-256-cbc', 
+      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
+      iv
+    );
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    console.error('Decryption error:', error);
+    return encryptedText; // Return original value in case of error
+  }
+}
 
 // Virtual for full name
 patientSchema.virtual('fullName').get(function() {
-  return `${this.user.firstName} ${this.user.lastName}`;
+  return `${this.firstName} ${this.lastName}`;
 });
 
-// Method to check if patient has a conflict with proposed appointment time
-patientSchema.methods.hasAppointmentConflict = async function(startTime, endTime) {
-  const Appointment = mongoose.model('Appointment');
-  const overlappingAppointments = await Appointment.find({
-    patient: this._id,
-    status: 'scheduled',
-    $or: [
-      { // New appointment starts during an existing appointment
-        startTime: { $lte: startTime },
-        endTime: { $gt: startTime }
-      },
-      { // New appointment ends during an existing appointment
-        startTime: { $lt: endTime },
-        endTime: { $gte: endTime }
-      },
-      { // New appointment encompasses an existing appointment
-        startTime: { $gte: startTime },
-        endTime: { $lte: endTime }
-      }
-    ]
-  }).exec();
-  
-  return overlappingAppointments.length > 0;
-};
-
-// Method to add appointment to history
-patientSchema.methods.addToAppointmentHistory = function(appointmentId, status) {
-  this.appointmentHistory.push({
-    appointmentId,
-    status,
-    date: new Date()
-  });
-  
-  if (status === 'no_show') {
-    this.noShowCount += 1;
-  }
-  
-  return this.save();
-};
+// Virtual for age calculation
+patientSchema.virtual('age').get(function() {
+  if (!this.dateOfBirth) return null;
+  const dob = new Date(decryptField(this.dateOfBirth));
+  const ageDifMs = Date.now() - dob.getTime();
+  const ageDate = new Date(ageDifMs);
+  return Math.abs(ageDate.getUTCFullYear() - 1970);
+});
 
 const Patient = mongoose.model('Patient', patientSchema);
 

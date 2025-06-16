@@ -13,6 +13,153 @@ const { AuthorizationError } = require('../utils/errors/AuthorizationError');
 const auditLogger = require('../utils/audit-logger');
 
 /**
+ * Medical records controller
+ */
+const medicalRecordController = {
+  /**
+   * Create a medical history record
+   * @route POST /api/medical-records/history
+   */
+  createMedicalHistory: asyncHandler(async (req, res) => {
+    const historyData = req.body;
+    const record = await medicalRecordService.createMedicalHistory(historyData);
+    
+    return ResponseUtil.success(res, {
+      message: 'Medical history record created successfully',
+      record
+    }, 201);
+  }),
+  
+  /**
+   * Get medical history records for a patient
+   * @route GET /api/medical-records/history/:patientId
+   */
+  getMedicalHistory: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const records = await medicalRecordService.getMedicalHistory(patientId);
+    
+    return ResponseUtil.success(res, { records });
+  }),
+  
+  /**
+   * Update a medical history record
+   * @route PUT /api/medical-records/history/:recordId
+   */
+  updateMedicalHistory: asyncHandler(async (req, res) => {
+    const { recordId } = req.params;
+    const updateData = req.body;
+    
+    const record = await medicalRecordService.updateMedicalHistory(recordId, updateData);
+    
+    return ResponseUtil.success(res, {
+      message: 'Medical history record updated successfully',
+      record
+    });
+  }),
+  
+  /**
+   * Create an allergy record
+   * @route POST /api/medical-records/allergies
+   */
+  createAllergy: asyncHandler(async (req, res) => {
+    const allergyData = req.body;
+    const record = await medicalRecordService.createAllergy(allergyData);
+    
+    return ResponseUtil.success(res, {
+      message: 'Allergy record created successfully',
+      record
+    }, 201);
+  }),
+  
+  /**
+   * Get allergies for a patient
+   * @route GET /api/medical-records/allergies/:patientId
+   */
+  getAllergies: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const records = await medicalRecordService.getAllergies(patientId);
+    
+    return ResponseUtil.success(res, { records });
+  }),
+  
+  /**
+   * Create a medication record
+   * @route POST /api/medical-records/medications
+   */
+  createMedication: asyncHandler(async (req, res) => {
+    const medicationData = req.body;
+    const record = await medicalRecordService.createMedication(medicationData);
+    
+    return ResponseUtil.success(res, {
+      message: 'Medication record created successfully',
+      record
+    }, 201);
+  }),
+  
+  /**
+   * Get medications for a patient
+   * @route GET /api/medical-records/medications/:patientId
+   */
+  getMedications: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const records = await medicalRecordService.getMedications(patientId);
+    
+    return ResponseUtil.success(res, { records });
+  }),
+  
+  /**
+   * Create a visit note
+   * @route POST /api/medical-records/visit-notes
+   */
+  createVisitNote: asyncHandler(async (req, res) => {
+    const noteData = req.body;
+    const record = await medicalRecordService.createVisitNote(noteData);
+    
+    return ResponseUtil.success(res, {
+      message: 'Visit note created successfully',
+      record
+    }, 201);
+  }),
+  
+  /**
+   * Get visit notes for a patient
+   * @route GET /api/medical-records/visit-notes/:patientId
+   */
+  getVisitNotes: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const records = await medicalRecordService.getVisitNotes(patientId);
+    
+    return ResponseUtil.success(res, { records });
+  }),
+  
+  /**
+   * Create a lab result record
+   * @route POST /api/medical-records/lab-results
+   */
+  createLabResult: asyncHandler(async (req, res) => {
+    const labData = req.body;
+    const record = await medicalRecordService.createLabResult(labData);
+    
+    return ResponseUtil.success(res, {
+      message: 'Lab result record created successfully',
+      record
+    }, 201);
+  }),
+  
+  /**
+   * Get lab results for a patient
+   * @route GET /api/medical-records/lab-results/:patientId
+   */
+  getLabResults: asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const records = await medicalRecordService.getLabResults(patientId);
+    
+    return ResponseUtil.success(res, { records });
+  })
+};
+
+
+/**
  * Get medical records for a patient
  */
 const getPatientMedicalRecords = asyncHandler(async (req, res) => {

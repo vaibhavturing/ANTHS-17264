@@ -24,6 +24,7 @@ const availability = require('./availability.model');
 const recurringAppointmentSeries = require('./recurringAppointment.model');
 const waitlist = require('./waitlist.model');
 
+
 /**
  * CHANGES:
  * - Added VerificationToken to the exports
