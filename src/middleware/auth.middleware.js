@@ -62,6 +62,8 @@ const authMiddleware = {
       return ResponseUtil.error(res, 'Authentication error', 500, 'SERVER_ERROR');
     }
   },
+
+  
   
   /**
    * Check if the authenticated user has admin role

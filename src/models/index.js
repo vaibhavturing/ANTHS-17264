@@ -22,6 +22,8 @@ const appointmentType = require('./appointmentType.model');
 const schedule = require('./schedule.model');
 const availability = require('./availability.model');
 const recurringAppointmentSeries = require('./recurringAppointment.model');
+const waitlist = require('./waitlist.model');
+
 /**
  * CHANGES:
  * - Added VerificationToken to the exports
@@ -46,5 +48,6 @@ module.exports = {
   appointmentType,
   schedule,
   availability,
-  recurringAppointmentSeries
+  recurringAppointmentSeries,
+  waitlist
 };
