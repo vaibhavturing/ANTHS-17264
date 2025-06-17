@@ -2,14 +2,14 @@ const express = require('express');
 const router = express.Router();
 const clinicalNoteController = require('../controllers/clinicalNote.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { checkRole } = require('../middleware/authorization.middleware');
+const authorizationMiddleware = require('../middleware/authorization.middleware'); // Updated import
 
 // Apply authentication to all routes
 router.use(authMiddleware.authenticate);
 
 // Create a new clinical note
 router.post('/', 
-  checkRole(['doctor', 'nurse']), 
+  authorizationMiddleware.checkRole(['doctor', 'nurse']), // Updated to use proper import
   clinicalNoteController.createNote
 );
 
@@ -21,7 +21,7 @@ router.get('/patient/:patientId', clinicalNoteController.getPatientNotes);
 
 // Update a clinical note
 router.put('/:id', 
-  checkRole(['doctor', 'admin']), 
+  authorizationMiddleware.checkRole(['doctor', 'admin']), // Updated to use proper import
   clinicalNoteController.updateNote
 );
 

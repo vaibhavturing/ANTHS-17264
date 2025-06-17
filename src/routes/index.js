@@ -35,6 +35,10 @@ const recurringAppointmentRoutes = require('./recurringAppointment.routes');
 // CHANGE: Added import for calendar routes
 const calendarRoutes = require('./calendar.routes');
 
+const noteTemplateRoutes = require('./noteTemplate.routes');         // Add this line
+const clinicalNoteRoutes = require('./clinicalNote.routes');         // Add this line
+
+
 
 
 
@@ -82,7 +86,9 @@ const mountRoutes = () => {
   router.use('/api/recurring-appointments', recurringAppointmentRoutes);
   // CHANGE: Added calendar routes
   router.use('/api/calendar', calendarRoutes);
-
+  
+  router.use('/note-templates', noteTemplateRoutes);                   // Add this line
+  router.use('/clinical-notes', clinicalNoteRoutes);                   // Add this line
 
 
   // All routes below this point require authentication

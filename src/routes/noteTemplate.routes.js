@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const noteTemplateController = require('../controllers/noteTemplate.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { checkRole } = require('../middleware/authorization.middleware');
+const authorizationMiddleware = require('../middleware/authorization.middleware'); // Updated import
 
 // Apply authentication to all routes
 router.use(authMiddleware.authenticate);
@@ -15,31 +15,31 @@ router.get('/:id', noteTemplateController.getTemplateById);
 
 // Create a new template
 router.post('/', 
-  checkRole(['doctor', 'admin']), 
+  authorizationMiddleware.checkRole(['doctor', 'admin']), // Updated to use proper import
   noteTemplateController.createTemplate
 );
 
 // Update template
 router.put('/:id', 
-  checkRole(['doctor', 'admin']), 
+  authorizationMiddleware.checkRole(['doctor', 'admin']), // Updated to use proper import
   noteTemplateController.updateTemplate
 );
 
 // Delete template
 router.delete('/:id', 
-  checkRole(['doctor', 'admin']), 
+  authorizationMiddleware.checkRole(['doctor', 'admin']), // Updated to use proper import
   noteTemplateController.deleteTemplate
 );
 
 // Clone template
 router.post('/:id/clone', 
-  checkRole(['doctor', 'admin']), 
+  authorizationMiddleware.checkRole(['doctor', 'admin']), // Updated to use proper import
   noteTemplateController.cloneTemplate
 );
 
 // Create default templates (admin only)
 router.post('/create-defaults', 
-  checkRole(['admin']), 
+  authorizationMiddleware.checkRole(['admin']), // Updated to use proper import
   noteTemplateController.createDefaultTemplates
 );
 
