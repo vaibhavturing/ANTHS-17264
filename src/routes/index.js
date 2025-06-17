@@ -89,6 +89,8 @@ const mountRoutes = () => {
   
   router.use('/note-templates', noteTemplateRoutes);                   // Add this line
   router.use('/clinical-notes', clinicalNoteRoutes);                   // Add this line
+  const labResultRoutes = require('./labResult.routes'); // Added the lab result routes
+
 
 
   // All routes below this point require authentication
@@ -148,6 +150,9 @@ const mountRoutes = () => {
     adminRoutes
   );
   logger.debug('Mounted admin routes at /api/admin with admin role protection');
+
+  router.use('/lab-results', labResultRoutes); // Added the lab result routes
+
 
   return router;
 };
