@@ -88,9 +88,11 @@ exports.checkInteractions = catchAsync(async (req, res) => {
     throw new ApiError(400, 'Patient ID and array of medication IDs are required');
   }
   
+  // Updated to include the user ID for alert customization
   const interactions = await drugInteractionService.checkAllInteractions(
     patientId,
-    medicationIds
+    medicationIds,
+    req.user?.id // Pass the user ID if available
   );
   
   res.status(200).json({

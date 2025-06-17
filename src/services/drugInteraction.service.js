@@ -1,6 +1,7 @@
 const Medication = require('../models/medication.model');
 const Patient = require('../models/patient.model');
 const Allergy = require('../models/allergy.model');
+const clinicalAlertService = require('./clinicalAlert.service'); // New import
 
 class DrugInteractionService {
   /**
@@ -149,18 +150,45 @@ class DrugInteractionService {
    * Comprehensive check for all interactions
    * @param {String} patientId - Patient ID
    * @param {Array} medicationIds - Array of medication IDs to check
+   * @param {String} userId - Optional user ID for customized alerts
    * @returns {Promise<Object>} Object containing drug and allergy interactions
    */
-  async checkAllInteractions(patientId, medicationIds) {
+  async checkAllInteractions(patientId, medicationIds, userId = null) {
     try {
+      // Method 1: Use direct interaction checks as before
       const [drugInteractions, allergyInteractions] = await Promise.all([
         this.checkDrugInteractions(medicationIds),
         this.checkAllergyInteractions(patientId, medicationIds)
       ]);
       
+      // Method 2: Use the clinical alert system for best practice alerts
+      // Get medications for the context
+      const medications = await Medication.find({
+        _id: { $in: medicationIds }
+      });
+      
+      // Get clinical alerts if we have a user ID
+      let clinicalAlerts = [];
+      if (userId) {
+        // Build context for the clinical alert system
+        const context = {
+          medications,
+          currentMedicationIds: medicationIds
+        };
+        
+        // Get relevant clinical alerts
+        clinicalAlerts = await clinicalAlertService.getPatientAlerts(
+          patientId,
+          userId,
+          context
+        );
+      }
+      
+      // Return combined results
       return {
         drugInteractions,
-        allergyInteractions
+        allergyInteractions,
+        clinicalAlerts // New field with best practice alerts
       };
     } catch (error) {
       throw new Error(`Error checking interactions: ${error.message}`);
