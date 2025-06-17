@@ -1,140 +1,141 @@
 const mongoose = require('mongoose');
-const baseSchema = require('./baseSchema');
-const crypto = require('crypto');
+const { Schema } = mongoose;
 
-// Encryption/decryption utility functions (same as in other models)
-function encryptField(text) {
-  if (!text) return text;
-  try {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(
-      'aes-256-cbc', 
-      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
-      iv
-    );
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return `${iv.toString('hex')}:${encrypted}`;
-  } catch (error) {
-    console.error('Encryption error:', error);
-    return text;
-  }
-}
-
-function decryptField(encryptedText) {
-  if (!encryptedText || !encryptedText.includes(':')) return encryptedText;
-  try {
-    const [ivHex, encrypted] = encryptedText.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv(
-      'aes-256-cbc', 
-      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
-      iv
-    );
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } catch (error) {
-    console.error('Decryption error:', error);
-    return encryptedText;
-  }
-}
-
-// Schema for patient medications
-const medicationSchema = new mongoose.Schema({
-  patient: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Patient',
-    required: true,
-    index: true
+const interactionSchema = new Schema({
+  interactsWith: {
+    type: Schema.Types.ObjectId,
+    ref: 'Medication',
+    required: true
   },
+  severity: {
+    type: String,
+    enum: ['mild', 'moderate', 'severe', 'contraindicated'],
+    required: true
+  },
+  description: {
+    type: String,
+    required: true
+  }
+});
+
+const sideEffectSchema = new Schema({
   name: {
     type: String,
-    required: true,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
-  },
-  dosage: {
-    type: String,
-    required: true,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
+    required: true
   },
   frequency: {
     type: String,
-    required: true,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
+    enum: ['rare', 'uncommon', 'common', 'very common'],
+    default: 'uncommon'
   },
-  startDate: {
-    type: Date,
+  severity: {
+    type: String,
+    enum: ['mild', 'moderate', 'severe'],
+    default: 'moderate'
+  }
+});
+
+const dosageFormSchema = new Schema({
+  form: {
+    type: String,
+    enum: ['tablet', 'capsule', 'liquid', 'injection', 'cream', 'ointment', 'patch', 'inhaler', 'other'],
     required: true
   },
-  endDate: {
-    type: Date
-  },
-  prescribedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  purpose: {
+  strength: {
     type: String,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
+    required: true
   },
-  instructions: {
+  unit: {
     type: String,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
-  },
-  sideEffects: {
-    type: String,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
-  },
-  status: {
-    type: String,
-    enum: ['active', 'discontinued', 'completed'],
-    default: 'active'
-  },
-  relatedCondition: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'MedicalHistory'
-  },
-  pharmacy: {
-    name: String,
-    phone: String,
-    address: String
+    required: true
   }
-}, {
-  ...baseSchema.baseOptions,
-  toJSON: { getters: true },
-  toObject: { getters: true }
 });
+
+const medicationSchema = new Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true
+    },
+    genericName: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true
+    },
+    brandNames: [{
+      type: String,
+      trim: true
+    }],
+    ndc: { // National Drug Code
+      type: String,
+      unique: true,
+      required: true,
+      trim: true
+    },
+    rxcui: { // RxNorm Concept Unique Identifier
+      type: String,
+      trim: true
+    },
+    medicationType: {
+      type: String,
+      enum: ['prescription', 'otc'],
+      default: 'prescription'
+    },
+    classification: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    controlledSubstanceClass: {
+      type: String,
+      enum: ['none', 'I', 'II', 'III', 'IV', 'V'],
+      default: 'none'
+    },
+    dosageForms: [dosageFormSchema],
+    standardDosages: [{
+      ageGroup: String,
+      weight: String,
+      dosage: String,
+      frequency: String,
+      maxDailyDose: String
+    }],
+    interactions: [interactionSchema],
+    sideEffects: [sideEffectSchema],
+    contraindications: [{
+      type: String,
+      trim: true
+    }],
+    warnings: [{
+      type: String,
+      trim: true
+    }],
+    manufacturer: {
+      type: String,
+      trim: true
+    },
+    pregnancyCategory: {
+      type: String,
+      enum: ['A', 'B', 'C', 'D', 'X', 'N'],
+      default: 'N' // Not classified
+    },
+    isActive: {
+      type: Boolean,
+      default: true
+    }
+  },
+  {
+    timestamps: true,
+    versionKey: false
+  }
+);
+
+// Indexes for faster query performance
+medicationSchema.index({ name: 'text', genericName: 'text' });
+medicationSchema.index({ classification: 1 });
+medicationSchema.index({ controlledSubstanceClass: 1 });
 
 const Medication = mongoose.model('Medication', medicationSchema);
 

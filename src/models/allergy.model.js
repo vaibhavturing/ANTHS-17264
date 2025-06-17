@@ -1,107 +1,74 @@
 const mongoose = require('mongoose');
-const baseSchema = require('./baseSchema');
-const crypto = require('crypto');
+const { Schema } = mongoose;
 
-// Encryption/decryption utility functions (same as in other models)
-function encryptField(text) {
-  if (!text) return text;
-  try {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(
-      'aes-256-cbc', 
-      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
-      iv
-    );
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return `${iv.toString('hex')}:${encrypted}`;
-  } catch (error) {
-    console.error('Encryption error:', error);
-    return text;
-  }
-}
-
-function decryptField(encryptedText) {
-  if (!encryptedText || !encryptedText.includes(':')) return encryptedText;
-  try {
-    const [ivHex, encrypted] = encryptedText.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv(
-      'aes-256-cbc', 
-      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
-      iv
-    );
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } catch (error) {
-    console.error('Decryption error:', error);
-    return encryptedText;
-  }
-}
-
-// Schema for allergies
-const allergySchema = new mongoose.Schema({
-  patient: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Patient',
-    required: true,
-    index: true
-  },
-  allergen: {
-    type: String,
-    required: true,
-    set: function(val) {
-      return encryptField(val);
+const allergySchema = new Schema(
+  {
+    patient: {
+      type: Schema.Types.ObjectId,
+      ref: 'Patient',
+      required: true
     },
-    get: function(val) {
-      return decryptField(val);
+    allergen: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    allergenType: {
+      type: String,
+      enum: ['medication', 'food', 'environmental'],
+      required: true
+    },
+    // For medication allergies, store the reference
+    medicationId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Medication'
+    },
+    // For medications, we can also link to the class or ingredient
+    allergenClass: {
+      type: String,
+      trim: true
+    },
+    severity: {
+      type: String,
+      enum: ['mild', 'moderate', 'severe'],
+      required: true
+    },
+    reaction: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    startDate: {
+      type: Date
+    },
+    endDate: {
+      type: Date
+    },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+    notes: {
+      type: String,
+      trim: true
+    },
+    reportedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User'
     }
   },
-  allergenType: {
-    type: String,
-    enum: ['medication', 'food', 'environmental', 'other'],
-    required: true
-  },
-  severity: {
-    type: String,
-    enum: ['mild', 'moderate', 'severe', 'life_threatening'],
-    required: true
-  },
-  reaction: {
-    type: String,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
-  },
-  notes: {
-    type: String,
-    set: function(val) {
-      return encryptField(val);
-    },
-    get: function(val) {
-      return decryptField(val);
-    }
-  },
-  diagnosedDate: {
-    type: Date
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  reportedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  {
+    timestamps: true,
+    versionKey: false
   }
-}, {
-  ...baseSchema.baseOptions,
-  toJSON: { getters: true },
-  toObject: { getters: true }
-});
+);
+
+// Compound index for patient and allergen for faster lookups
+allergySchema.index({ patient: 1, allergen: 1 });
+// Index for allergen type
+allergySchema.index({ allergenType: 1 });
+// Index for medication ID references
+allergySchema.index({ medicationId: 1 });
 
 const Allergy = mongoose.model('Allergy', allergySchema);
 
