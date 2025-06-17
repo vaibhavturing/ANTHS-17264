@@ -1,94 +1,78 @@
 const NoteTemplate = require('../models/noteTemplate.model');
 const logger = require('../utils/logger');
-const { NotFoundError, ValidationError } = require('../utils/errors');
+const { NotFoundError, BadRequestError } = require('../utils/errors');
 
 /**
- * Service for managing note templates
+ * Service for managing clinical note templates
  */
 const noteTemplateService = {
   /**
    * Create a new note template
-   * @param {Object} templateData - Template data
+   * @param {Object} templateData - Data for the new template
    * @returns {Promise<Object>} Created template
    */
   createTemplate: async (templateData) => {
     try {
       const template = new NoteTemplate(templateData);
       await template.save();
+      
+      logger.info(`Note template created: ${template._id}`, { templateName: template.name });
       return template;
     } catch (error) {
-      logger.error('Error creating note template', {
-        error: error.message,
-        templateData: templateData.name
-      });
+      logger.error('Error creating note template', { error: error.message });
       throw error;
     }
   },
-
+  
+  /**
+   * Get all note templates
+   * @param {Object} filters - Filter criteria
+   * @returns {Promise<Array>} List of templates
+   */
+  getAllTemplates: async (filters = {}) => {
+    try {
+      const query = { isActive: true };
+      
+      // Apply filters if provided
+      if (filters.type) query.type = filters.type;
+      if (filters.specialtyRelevance) query.specialtyRelevance = filters.specialtyRelevance;
+      if (filters.createdBy) query.createdBy = filters.createdBy;
+      
+      const templates = await NoteTemplate.find(query);
+      return templates;
+    } catch (error) {
+      logger.error('Error retrieving note templates', { error: error.message });
+      throw error;
+    }
+  },
+  
   /**
    * Get template by ID
-   * @param {String} templateId - Template ID
+   * @param {string} templateId - ID of the template
    * @returns {Promise<Object>} Template data
    */
   getTemplateById: async (templateId) => {
     try {
-      const template = await NoteTemplate.findById(templateId)
-        .populate('createdBy', 'firstName lastName')
-        .populate('lastModifiedBy', 'firstName lastName');
+      const template = await NoteTemplate.findById(templateId);
       
       if (!template) {
-        throw new NotFoundError('Template not found');
+        throw new NotFoundError('Note template not found');
       }
       
       return template;
     } catch (error) {
-      logger.error('Error fetching template', {
-        error: error.message,
-        templateId
+      logger.error('Error retrieving note template', { 
+        error: error.message, 
+        templateId 
       });
       throw error;
     }
   },
-
-  /**
-   * Get all templates, with optional filtering
-   * @param {Object} filters - Optional filters (templateType, specialty, isActive)
-   * @returns {Promise<Array>} List of templates
-   */
-  getTemplates: async (filters = {}) => {
-    try {
-      const query = {};
-      
-      if (filters.templateType) {
-        query.templateType = filters.templateType;
-      }
-      
-      if (filters.specialty) {
-        query.specialty = filters.specialty;
-      }
-      
-      if (filters.isActive !== undefined) {
-        query.isActive = filters.isActive;
-      }
-      
-      const templates = await NoteTemplate.find(query)
-        .select('name description templateType specialty isDefault isActive')
-        .sort({ templateType: 1, name: 1 });
-      
-      return templates;
-    } catch (error) {
-      logger.error('Error fetching templates', {
-        error: error.message,
-        filters
-      });
-      throw error;
-    }
-  },
-
+  
   /**
    * Update a template
-   * @param {String} templateId - Template ID
-   * @param {Object} updateData - Template data to update
+   * @param {string} templateId - ID of the template to update
+   * @param {Object} updateData - New template data
    * @returns {Promise<Object>} Updated template
    */
   updateTemplate: async (templateId, updateData) => {
@@ -96,157 +80,192 @@ const noteTemplateService = {
       const template = await NoteTemplate.findById(templateId);
       
       if (!template) {
-        throw new NotFoundError('Template not found');
+        throw new NotFoundError('Note template not found');
       }
       
-      // Don't allow changing the template type once created
-      if (updateData.templateType && updateData.templateType !== template.templateType) {
-        throw new ValidationError('Template type cannot be changed');
+      // Prevent updating system templates unless by admin
+      if (template.isSystemTemplate && !updateData.adminOverride) {
+        throw new BadRequestError('Cannot modify system templates');
       }
       
-      // Update fields
-      Object.keys(updateData).forEach(key => {
-        template[key] = updateData[key];
-      });
+      // Remove adminOverride field before updating
+      if (updateData.adminOverride) {
+        delete updateData.adminOverride;
+      }
       
+      Object.assign(template, updateData);
       await template.save();
+      
+      logger.info(`Note template updated: ${template._id}`, { templateName: template.name });
       return template;
     } catch (error) {
-      logger.error('Error updating template', {
-        error: error.message,
-        templateId
+      logger.error('Error updating note template', { 
+        error: error.message, 
+        templateId 
       });
       throw error;
     }
   },
-
-  /**
-   * Set a template as default for its type
-   * @param {String} templateId - Template ID
-   * @returns {Promise<Object>} Updated template
-   */
-  setAsDefault: async (templateId) => {
-    try {
-      const template = await NoteTemplate.findById(templateId);
-      
-      if (!template) {
-        throw new NotFoundError('Template not found');
-      }
-      
-      // First, unset any existing defaults of this type
-      await NoteTemplate.updateMany(
-        { 
-          templateType: template.templateType,
-          isDefault: true 
-        },
-        { 
-          isDefault: false 
-        }
-      );
-      
-      // Then set this one as default
-      template.isDefault = true;
-      await template.save();
-      
-      return template;
-    } catch (error) {
-      logger.error('Error setting template as default', {
-        error: error.message,
-        templateId
-      });
-      throw error;
-    }
-  },
-
+  
   /**
    * Delete a template (soft delete by setting isActive to false)
-   * @param {String} templateId - Template ID
-   * @returns {Promise<Object>} Deleted template
+   * @param {string} templateId - ID of the template to delete
+   * @returns {Promise<Object>} Result of the operation
    */
   deleteTemplate: async (templateId) => {
     try {
       const template = await NoteTemplate.findById(templateId);
       
       if (!template) {
-        throw new NotFoundError('Template not found');
+        throw new NotFoundError('Note template not found');
       }
       
-      if (template.isDefault) {
-        throw new ValidationError('Cannot delete a default template');
+      if (template.isSystemTemplate) {
+        throw new BadRequestError('Cannot delete system templates');
       }
       
       template.isActive = false;
       await template.save();
       
-      return { success: true, message: 'Template deleted successfully' };
+      logger.info(`Note template deleted (deactivated): ${templateId}`);
+      return { success: true, message: 'Template deactivated successfully' };
     } catch (error) {
-      logger.error('Error deleting template', {
-        error: error.message,
-        templateId
+      logger.error('Error deleting note template', { 
+        error: error.message, 
+        templateId 
       });
       throw error;
     }
   },
-
+  
   /**
-   * Clone a template
-   * @param {String} templateId - Template ID to clone
-   * @param {String} userId - User ID creating the clone
-   * @param {Object} overrideData - Data to override in the cloned template
+   * Clone an existing template
+   * @param {string} templateId - ID of the template to clone
+   * @param {Object} modifications - Fields to modify in the cloned template
    * @returns {Promise<Object>} Cloned template
    */
-  cloneTemplate: async (templateId, userId, overrideData = {}) => {
+  cloneTemplate: async (templateId, modifications = {}) => {
     try {
       const template = await NoteTemplate.findById(templateId);
       
       if (!template) {
-        throw new NotFoundError('Template not found');
+        throw new NotFoundError('Note template not found');
       }
       
-      // Create a clean template object without _id and other MongoDB-specific fields
+      // Create a copy without _id to generate a new document
       const templateData = template.toObject();
       delete templateData._id;
-      delete templateData.id;
       delete templateData.createdAt;
       delete templateData.updatedAt;
-      delete templateData.__v;
       
-      // Apply overrides
-      const clonedTemplate = {
+      // Apply modifications
+      const newTemplate = new NoteTemplate({
         ...templateData,
-        ...overrideData,
-        name: overrideData.name || `${templateData.name} (Copy)`,
-        createdBy: userId,
-        lastModifiedBy: userId,
-        isDefault: false // Cloned templates are never default
-      };
+        isSystemTemplate: false, // Never clone as system template
+        name: modifications.name || `Copy of ${templateData.name}`,
+        ...modifications
+      });
       
-      const newTemplate = new NoteTemplate(clonedTemplate);
       await newTemplate.save();
       
+      logger.info(`Note template cloned from ${templateId} to ${newTemplate._id}`);
       return newTemplate;
     } catch (error) {
-      logger.error('Error cloning template', {
-        error: error.message,
-        templateId
+      logger.error('Error cloning note template', { 
+        error: error.message, 
+        templateId 
       });
       throw error;
     }
   },
-
+  
   /**
-   * Initialize default templates
-   * @param {String} userId - Admin user ID
-   * @returns {Promise<void>}
+   * Create default system templates
+   * @param {string} adminUserId - ID of admin user for ownership
+   * @returns {Promise<Array>} Created templates
    */
-  initializeDefaultTemplates: async (userId) => {
+  createDefaultTemplates: async (adminUserId) => {
     try {
-      await NoteTemplate.createDefaultTemplates(userId);
-      return { success: true, message: 'Default templates initialized successfully' };
-    } catch (error) {
-      logger.error('Error initializing default templates', {
-        error: error.message
+      const soapTemplate = {
+        name: 'Standard SOAP Note',
+        description: 'Standard SOAP note template with subjective, objective, assessment, and plan sections',
+        type: 'SOAP',
+        isSystemTemplate: true,
+        createdBy: adminUserId,
+        fields: [
+          {
+            name: 'chiefComplaint',
+            label: 'Chief Complaint',
+            type: 'textarea',
+            required: true,
+            order: 1,
+            section: 'subjective',
+            hint: 'Patient\'s main reason for visit'
+          },
+          {
+            name: 'historyOfPresentIllness',
+            label: 'History of Present Illness',
+            type: 'textarea',
+            required: true,
+            order: 2,
+            section: 'subjective',
+            hint: 'Detailed account of the development of the patient\'s illness'
+          },
+          {
+            name: 'vitalSigns',
+            label: 'Vital Signs',
+            type: 'textarea',
+            required: true,
+            order: 1,
+            section: 'objective',
+            hint: 'Temperature, blood pressure, heart rate, respiratory rate, etc.'
+          },
+          {
+            name: 'physicalExam',
+            label: 'Physical Examination',
+            type: 'textarea',
+            required: true,
+            order: 2,
+            section: 'objective'
+          },
+          {
+            name: 'assessment',
+            label: 'Assessment',
+            type: 'textarea',
+            required: true,
+            order: 1,
+            section: 'assessment',
+            hint: 'Diagnosis or clinical impression'
+          },
+          {
+            name: 'plan',
+            label: 'Plan',
+            type: 'textarea',
+            required: true,
+            order: 1,
+            section: 'plan',
+            hint: 'Treatment plan, medications, follow-up, etc.'
+          }
+        ]
+      };
+
+      // Check if template already exists
+      const existingTemplate = await NoteTemplate.findOne({ 
+        name: soapTemplate.name, 
+        isSystemTemplate: true 
       });
+
+      if (existingTemplate) {
+        logger.info('Default templates already exist, skipping creation');
+        return [existingTemplate];
+      }
+
+      const createdTemplate = await noteTemplateService.createTemplate(soapTemplate);
+      
+      logger.info('Default note templates created');
+      return [createdTemplate];
+    } catch (error) {
+      logger.error('Error creating default templates', { error: error.message });
       throw error;
     }
   }

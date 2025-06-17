@@ -1,132 +1,116 @@
 const noteTemplateService = require('../services/noteTemplate.service');
 const { ResponseUtil } = require('../utils/response.util');
 const asyncHandler = require('../utils/async-handler.util');
+const { templateSchemas } = require('../validators/noteTemplate.validator');
+const validationMiddleware = require('../middleware/validate.middleware');
 const logger = require('../utils/logger');
 
 /**
- * Controller for note templates
+ * Create a new note template
+ * @route POST /api/note-templates
+ * @access Private (Doctors, Admins)
  */
-const noteTemplateController = {
-  /**
-   * Create a new note template
-   * @route POST /api/note-templates
-   */
-  createTemplate: asyncHandler(async (req, res) => {
-    const templateData = {
-      ...req.body,
-      createdBy: req.user.userId,
-      lastModifiedBy: req.user.userId
-    };
-    
-    const template = await noteTemplateService.createTemplate(templateData);
-    
-    return ResponseUtil.success(res, {
-      message: 'Template created successfully',
-      template
-    }, 201);
-  }),
+const createTemplate = asyncHandler(async (req, res) => {
+  // Add the logged-in user as the creator
+  const templateData = {
+    ...req.body,
+    createdBy: req.user._id
+  };
+  
+  const template = await noteTemplateService.createTemplate(templateData);
+  return ResponseUtil.success(res, { 
+    message: 'Note template created successfully', 
+    template 
+  }, 201);
+});
 
-  /**
-   * Get template by ID
-   * @route GET /api/note-templates/:templateId
-   */
-  getTemplateById: asyncHandler(async (req, res) => {
-    const { templateId } = req.params;
-    const template = await noteTemplateService.getTemplateById(templateId);
-    
-    return ResponseUtil.success(res, { template });
-  }),
+/**
+ * Get all note templates
+ * @route GET /api/note-templates
+ * @access Private
+ */
+const getAllTemplates = asyncHandler(async (req, res) => {
+  const templates = await noteTemplateService.getAllTemplates(req.query);
+  return ResponseUtil.success(res, { templates });
+});
 
-  /**
-   * Get all templates
-   * @route GET /api/note-templates
-   */
-  getTemplates: asyncHandler(async (req, res) => {
-    const { templateType, specialty, isActive } = req.query;
-    
-    const filters = {};
-    if (templateType) filters.templateType = templateType;
-    if (specialty) filters.specialty = specialty;
-    if (isActive !== undefined) filters.isActive = isActive === 'true';
-    
-    const templates = await noteTemplateService.getTemplates(filters);
-    
-    return ResponseUtil.success(res, { templates });
-  }),
+/**
+ * Get template by ID
+ * @route GET /api/note-templates/:id
+ * @access Private
+ */
+const getTemplateById = asyncHandler(async (req, res) => {
+  const template = await noteTemplateService.getTemplateById(req.params.id);
+  return ResponseUtil.success(res, { template });
+});
 
-  /**
-   * Update a template
-   * @route PUT /api/note-templates/:templateId
-   */
-  updateTemplate: asyncHandler(async (req, res) => {
-    const { templateId } = req.params;
-    const updateData = {
-      ...req.body,
-      lastModifiedBy: req.user.userId
-    };
-    
-    const template = await noteTemplateService.updateTemplate(templateId, updateData);
-    
-    return ResponseUtil.success(res, {
-      message: 'Template updated successfully',
-      template
-    });
-  }),
+/**
+ * Update a template
+ * @route PUT /api/note-templates/:id
+ * @access Private (Creator or Admin)
+ */
+const updateTemplate = asyncHandler(async (req, res) => {
+  // Check if user is admin for adminOverride capability
+  if (req.user.role === 'admin') {
+    req.body.adminOverride = true;
+  }
+  
+  const template = await noteTemplateService.updateTemplate(req.params.id, req.body);
+  return ResponseUtil.success(res, { 
+    message: 'Template updated successfully', 
+    template 
+  });
+});
 
-  /**
-   * Set a template as default for its type
-   * @route PUT /api/note-templates/:templateId/set-default
-   */
-  setAsDefault: asyncHandler(async (req, res) => {
-    const { templateId } = req.params;
-    const template = await noteTemplateService.setAsDefault(templateId);
-    
-    return ResponseUtil.success(res, {
-      message: 'Template set as default successfully',
-      template
-    });
-  }),
+/**
+ * Delete a template
+ * @route DELETE /api/note-templates/:id
+ * @access Private (Creator or Admin)
+ */
+const deleteTemplate = asyncHandler(async (req, res) => {
+  const result = await noteTemplateService.deleteTemplate(req.params.id);
+  return ResponseUtil.success(res, { 
+    message: result.message 
+  });
+});
 
-  /**
-   * Delete a template
-   * @route DELETE /api/note-templates/:templateId
-   */
-  deleteTemplate: asyncHandler(async (req, res) => {
-    const { templateId } = req.params;
-    const result = await noteTemplateService.deleteTemplate(templateId);
-    
-    return ResponseUtil.success(res, result);
-  }),
+/**
+ * Clone a template
+ * @route POST /api/note-templates/:id/clone
+ * @access Private (Doctors, Admins)
+ */
+const cloneTemplate = asyncHandler(async (req, res) => {
+  const modifications = {
+    ...req.body,
+    createdBy: req.user._id
+  };
+  
+  const template = await noteTemplateService.cloneTemplate(req.params.id, modifications);
+  return ResponseUtil.success(res, { 
+    message: 'Template cloned successfully', 
+    template 
+  }, 201);
+});
 
-  /**
-   * Clone a template
-   * @route POST /api/note-templates/:templateId/clone
-   */
-  cloneTemplate: asyncHandler(async (req, res) => {
-    const { templateId } = req.params;
-    const { name } = req.body;
-    
-    const template = await noteTemplateService.cloneTemplate(
-      templateId,
-      req.user.userId,
-      { name }
-    );
-    
-    return ResponseUtil.success(res, {
-      message: 'Template cloned successfully',
-      template
-    }, 201);
-  }),
+/**
+ * Create default system templates
+ * @route POST /api/note-templates/create-defaults
+ * @access Private (Admin only)
+ */
+const createDefaultTemplates = asyncHandler(async (req, res) => {
+  const templates = await noteTemplateService.createDefaultTemplates(req.user._id);
+  return ResponseUtil.success(res, { 
+    message: 'Default templates created successfully', 
+    count: templates.length 
+  }, 201);
+});
 
-  /**
-   * Initialize default templates
-   * @route POST /api/note-templates/initialize-defaults
-   */
-  initializeDefaultTemplates: asyncHandler(async (req, res) => {
-    const result = await noteTemplateService.initializeDefaultTemplates(req.user.userId);
-    
-    return ResponseUtil.success(res, result);
-  })
+module.exports = {
+  createTemplate: [validationMiddleware(templateSchemas.create), createTemplate],
+  getAllTemplates: [validationMiddleware(templateSchemas.getAll), getAllTemplates],
+  getTemplateById,
+  updateTemplate: [validationMiddleware(templateSchemas.update), updateTemplate],
+  deleteTemplate,
+  cloneTemplate,
+  createDefaultTemplates
 };
-
-module.exports = noteTemplateController;
