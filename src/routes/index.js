@@ -18,6 +18,8 @@ const medicalRecordRoutes = require('./medicalRecord.routes');
 const adminRoutes = require('./admin.routes');
 const healthRoutes = require('./health.routes');
 const profileRoutes = require('./profile.routes');
+const searchRoutes = require('./search.routes'); // New route
+
 
 
 
