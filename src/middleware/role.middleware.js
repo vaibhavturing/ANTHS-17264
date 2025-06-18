@@ -6,7 +6,8 @@
  * @returns {Function} Express middleware function
  */
 const roleMiddleware = (allowedRoles = []) => {
-  return (req, res, next) => {
+  // FIXED: Return an explicitly defined middleware function
+  return function roleMiddlewareFunction(req, res, next) {
     try {
       // User should already be authenticated and attached to req by auth.middleware
       if (!req.user) {
