@@ -40,6 +40,7 @@ const noteTemplateRoutes = require('./noteTemplate.routes');         // Add this
 const clinicalNoteRoutes = require('./clinicalNote.routes');         // Add this line
 
 
+const auditLogRoutes = require('./auditLog.routes'); // NEW: Added audit log routes import
 
 
 
