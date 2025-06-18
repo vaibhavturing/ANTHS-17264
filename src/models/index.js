@@ -23,7 +23,6 @@ const schedule = require('./schedule.model');
 const availability = require('./availability.model');
 const recurringAppointmentSeries = require('./recurringAppointment.model');
 const waitlist = require('./waitlist.model');
-const AuditLog = require('./auditLog.model'); // NEW: Added AuditLog model
 
 
 
@@ -52,7 +51,5 @@ module.exports = {
   schedule,
   availability,
   recurringAppointmentSeries,
-  waitlist,
-  AuditLog // NEW: Added AuditLog model
-
+  waitlist
 };
