@@ -22,7 +22,6 @@ const searchRoutes = require('./search.routes'); // New route
 
 
 
-
 const communicationRoutes = require('./communication.routes');
 const patientCommunicationRoutes = require('./patient-communication.routes');
 const appointmentNotificationRoutes = require('./appointment-notification.routes');
@@ -93,7 +92,7 @@ const mountRoutes = () => {
   router.use('/note-templates', noteTemplateRoutes);                   // Add this line
   router.use('/clinical-notes', clinicalNoteRoutes);                   // Add this line
   const labResultRoutes = require('./labResult.routes'); // Added the lab result routes
-
+  router.use('/search', searchRoutes); // New route
 
 
   // All routes below this point require authentication

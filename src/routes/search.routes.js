@@ -1,14 +1,12 @@
-// src/routes/search.routes.js
-
 const express = require('express');
 const router = express.Router();
 const SearchController = require('../controllers/search.controller');
 const { searchRecordsValidator, searchPatientsValidator } = require('../validators/search.validator');
-const authMiddleware = require('../middleware/auth.middleware');
+const { protect } = require('../middleware/auth.middleware'); // <-- Use destructuring to get the middleware function
 const roleMiddleware = require('../middleware/role.middleware');
 
 // Apply authentication middleware to all routes
-router.use(authMiddleware);
+router.use(protect);
 
 // Search for records (requires authenticated user)
 router.get('/records', 
