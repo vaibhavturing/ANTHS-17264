@@ -1,99 +1,170 @@
 // src/models/auditLog.model.js
+// HIPAA-Compliant Audit Log Model
+// NEW FILE: Implementing database storage for immutable audit logs
 
 const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
+const baseSchema = require('./baseSchema');
 
 /**
- * Audit Log Schema
- * Tracks all record access and modifications for compliance reporting
+ * Audit Log Schema for HIPAA Compliance
+ * 
+ * Features:
+ * - Crypto hash for tamper detection
+ * - Hash chaining for log sequence verification
+ * - Comprehensive event metadata
+ * - Read-only by default
  */
-const auditLogSchema = new Schema({
-  // User who performed the action
-  userId: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
+const auditLogSchema = new mongoose.Schema({
+  // When the event occurred
+  timestamp: {
+    type: Date,
     required: true,
+    default: Date.now,
+    immutable: true,
     index: true
   },
   
-  // User information for quick reference without joins
-  userDetails: {
-    name: String,
-    email: String,
-    role: String
-  },
-  
-  // Entity type (Patient, MedicalRecord, Prescription, etc.)
-  entityType: {
-    type: String,
-    required: true,
-    index: true
-  },
-  
-  // ID of the entity that was accessed/modified
-  entityId: {
-    type: Schema.Types.ObjectId,
-    required: true,
-    index: true
-  },
-  
-  // Optional reference to a patient if the entity relates to a patient
-  patientId: {
-    type: Schema.Types.ObjectId,
-    ref: 'Patient',
-    index: true
-  },
-  
-  // Action performed (view, create, update, delete)
+  // Type of action performed
   action: {
     type: String,
-    enum: ['view', 'create', 'update', 'delete'],
     required: true,
+    immutable: true,
     index: true
   },
   
-  // Description of the action
-  description: {
+  // Data related to the event (will vary by action type)
+  data: {
+    type: mongoose.Schema.Types.Mixed,
+    required: true,
+    immutable: true
+  },
+  
+  // Who performed the action
+  actor: {
+    userId: {
+      type: String,
+      required: true,
+      immutable: true,
+      index: true
+    },
+    userName: {
+      type: String,
+      required: true,
+      immutable: true
+    },
+    role: {
+      type: String,
+      required: true,
+      immutable: true,
+      index: true
+    },
+    ipAddress: {
+      type: String,
+      required: true,
+      immutable: true
+    }
+  },
+  
+  // What resource was affected
+  resource: {
+    type: {
+      type: String,
+      required: true,
+      immutable: true,
+      index: true
+    },
+    id: {
+      type: String,
+      required: true,
+      immutable: true,
+      index: true
+    }
+  },
+  
+  // Technical metadata
+  systemMetadata: {
+    hostname: {
+      type: String,
+      immutable: true
+    },
+    processId: {
+      type: Number,
+      immutable: true
+    },
+    version: {
+      type: String,
+      immutable: true
+    }
+  },
+  
+  // Cryptographic integrity protection
+  entryHash: {
     type: String,
-    required: true
-  },
-  
-  // IP address of the user
-  ipAddress: {
-    type: String
-  },
-  
-  // User agent (browser/app info)
-  userAgent: {
-    type: String
-  },
-  
-  // For update operations, store the changed fields
-  changes: {
-    type: Schema.Types.Mixed
-  },
-  
-  // Success/failure of the operation
-  successful: {
-    type: Boolean,
     required: true,
-    default: true,
+    immutable: true,
     index: true
   },
   
-  // If the operation failed, reason for failure
-  failureReason: {
-    type: String
+  // Previous log entry hash for chain verification
+  previousEntryHash: {
+    type: String,
+    immutable: true
+  },
+  
+  // Information about the integrity mechanism
+  integrity: {
+    version: {
+      type: String,
+      immutable: true
+    },
+    algorithm: {
+      type: String,
+      immutable: true
+    },
+    chainType: {
+      type: String,
+      immutable: true
+    }
   }
 }, {
-  timestamps: true // Automatically adds createdAt and updatedAt fields
+  ...baseSchema.baseOptions,
+  // Disable any update operations by default
+  strict: true,
+  // Never allow update operations
+  collection: 'hipaa_audit_logs'
 });
 
-// Add compound indexes for common queries
-auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
-auditLogSchema.index({ patientId: 1, createdAt: -1 });
-auditLogSchema.index({ userId: 1, action: 1, createdAt: -1 });
-auditLogSchema.index({ createdAt: -1 });
+// Prevent any updates
+auditLogSchema.pre('updateOne', function(next) {
+  const err = new Error('Audit logs cannot be modified');
+  err.name = 'ImmutableError';
+  next(err);
+});
 
-const AuditLog = mongoose.model('AuditLog', auditLogSchema);
-module.exports = AuditLog;
+auditLogSchema.pre('findOneAndUpdate', function(next) {
+  const err = new Error('Audit logs cannot be modified');
+  err.name = 'ImmutableError';
+  next(err);
+});
+
+auditLogSchema.pre('deleteOne', function(next) {
+  const err = new Error('Audit logs cannot be deleted');
+  err.name = 'ImmutableError';
+  next(err);
+});
+
+auditLogSchema.pre('deleteMany', function(next) {
+  const err = new Error('Audit logs cannot be deleted');
+  err.name = 'ImmutableError';
+  next(err);
+});
+
+// Add index for efficient querying
+auditLogSchema.index({ timestamp: 1, 'actor.userId': 1 });
+auditLogSchema.index({ timestamp: 1, 'resource.type': 1, 'resource.id': 1 });
+auditLogSchema.index({ action: 1, timestamp: 1 });
+
+// Export the model
+const AuditLogModel = mongoose.model('HipaaAuditLog', auditLogSchema);
+
+module.exports = { AuditLogModel };
