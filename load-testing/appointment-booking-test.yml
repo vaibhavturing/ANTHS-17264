@@ -1,0 +1,70 @@
+# load-testing/appointment-booking-test.yml
+# Complete load testing configuration for appointment booking system
+# Tests 100+ concurrent users creating appointments
+
+config:
+  target: "http://localhost:4000/api"
+  phases:
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 100
+      name: "Warming up the API"
+    - duration: 300
+      arrivalRate: 100
+      name: "Sustained high load (100 concurrent users)"
+  processor: "./test-data-generator.js"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer {{token}}"
+
+scenarios:
+  - name: "Book appointments with high concurrency"
+    flow:
+      # Authenticate users
+      - function: "generateUserCredentials"
+      - post:
+          url: "/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "token"
+            - json: "$.userId"
+              as: "userId"
+          
+      # Get available doctors
+      - get:
+          url: "/doctors"
+          capture:
+            - json: "$[0].id"
+              as: "doctorId"
+          
+      # Get available time slots
+      - function: "generateAppointmentDate" 
+      - get:
+          url: "/doctors/{{ doctorId }}/available-slots?date={{ appointmentDate }}"
+          capture:
+            - json: "$[0].startTime"
+              as: "startTime"
+            
+      # Book the appointment
+      - function: "generateAppointmentData"
+      - post:
+          url: "/appointments"
+          json:
+            patientId: "{{ userId }}"
+            doctorId: "{{ doctorId }}"
+            startTime: "{{ startTime }}"
+            endTime: "{{ endTime }}"
+            reason: "{{ reason }}"
+            type: "{{ appointmentType }}"
+            notes: "{{ notes }}"
+
+      # Verify the appointment was created
+      - get:
+          url: "/appointments/patient/{{ userId }}"
+          match:
+            - json: "$[0]"
+              exists: true

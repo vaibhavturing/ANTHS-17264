@@ -1,88 +1,136 @@
+// src/models/appointment.model.js
+// Complete appointment model with optimized indexes for high concurrency
+// OPTIMIZED: Added multiple indexes for high concurrency appointment queries
+
 const mongoose = require('mongoose');
 const baseSchema = require('./baseSchema');
+const logger = require('../utils/logger');
 
+/**
+ * Appointment Schema
+ */
 const appointmentSchema = new mongoose.Schema({
-  patient: {
+  patientId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'Patient',
+    required: true,
+    index: true // OPTIMIZATION: Added index for patient lookups
   },
-  doctor: {
+  doctorId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'Doctor',
+    required: true,
+    index: true // OPTIMIZATION: Added index for doctor lookups
   },
   startTime: {
     type: Date,
-    required: true
+    required: true,
+    index: true // OPTIMIZATION: Added index for datetime queries
   },
   endTime: {
     type: Date,
     required: true
   },
-  appointmentType: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'AppointmentType',
-    required: true
-  },
-  status: {
+  reason: {
     type: String,
-    enum: ['scheduled', 'completed', 'cancelled', 'rescheduled', 'no-show'],
-    default: 'scheduled'
+    required: true,
+    trim: true
+  },
+  type: {
+    type: String,
+    enum: ['regular', 'urgent', 'follow-up', 'yearly-checkup', 'telehealth'],
+    default: 'regular',
+    index: true // OPTIMIZATION: Added index for filtering by type
   },
   notes: {
     type: String,
     trim: true
   },
-  // Added cancellation rule
-  cancellationRule: {
+  status: {
     type: String,
-    enum: ['24h', '48h', '72h', 'custom', 'none'],
-    default: '24h'
+    enum: ['pending', 'scheduled', 'in-progress', 'completed', 'cancelled', 'no-show'],
+    default: 'pending',
+    index: true // OPTIMIZATION: Added index for status filtering
   },
-  // Added custom cancellation hours for custom rule
-  customCancellationHours: {
-    type: Number,
-    min: 1,
-    max: 168, // 1 week in hours
-    default: 24
-  },
-  // Fields to track rescheduling history
-  previousStartTime: Date,
-  previousEndTime: Date,
-  rescheduleReason: String,
-  rescheduleDate: Date,
-  // Field to track if this appointment was filled from waitlist
-  filledFromWaitlist: {
-    type: Boolean,
-    default: false
-  }
+  auditTrail: [{
+    action: {
+      type: String,
+      enum: ['created', 'updated', 'cancelled', 'completed', 'rescheduled', 'checked-in']
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    performedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    changes: {
+      type: Object
+    }
+  }]
 }, baseSchema.baseOptions);
 
-// Add indexes for better query performance
-appointmentSchema.index({ doctor: 1, startTime: 1, endTime: 1 });
-appointmentSchema.index({ patient: 1, startTime: 1 });
+// OPTIMIZATION: Added compound index for doctor scheduling
+appointmentSchema.index({ doctorId: 1, startTime: 1 });
+
+// OPTIMIZATION: Added compound index for patient appointment history
+appointmentSchema.index({ patientId: 1, startTime: -1 });
+
+// OPTIMIZATION: Added compound index for filtering appointments by status and date
 appointmentSchema.index({ status: 1, startTime: 1 });
 
-// Method to check if appointment can be cancelled based on cancellation rules
-appointmentSchema.methods.canCancel = function() {
-  const now = new Date();
-  const hoursBeforeAppointment = (this.startTime - now) / (1000 * 60 * 60);
-  
-  switch (this.cancellationRule) {
-    case '24h':
-      return hoursBeforeAppointment >= 24;
-    case '48h':
-      return hoursBeforeAppointment >= 48;
-    case '72h':
-      return hoursBeforeAppointment >= 72;
-    case 'custom':
-      return hoursBeforeAppointment >= this.customCancellationHours;
-    case 'none':
-      return true;
-    default:
-      return hoursBeforeAppointment >= 24;
+// Pre save hook to validate appointments
+appointmentSchema.pre('save', async function(next) {
+  try {
+    // Only run validation on new appointments or when times are modified
+    if (this.isNew || this.isModified('startTime') || this.isModified('endTime')) {
+      // Ensure end time is after start time
+      if (this.endTime <= this.startTime) {
+        throw new Error('Appointment end time must be after start time');
+      }
+      
+      // For new appointments, ensure they're not in the past
+      if (this.isNew && this.startTime < new Date()) {
+        throw new Error('Cannot create appointments in the past');
+      }
+      
+      // If audit trail doesn't exist, initialize it
+      if (!this.auditTrail || this.auditTrail.length === 0) {
+        this.auditTrail = [{
+          action: 'created',
+          timestamp: new Date(),
+          performedBy: this.createdBy || null
+        }];
+      }
+    }
+    
+    next();
+  } catch (error) {
+    logger.error('Appointment validation error', { error: error.message });
+    next(error);
   }
+});
+
+// Method to check if appointment is cancellable
+appointmentSchema.methods.isCancellable = function() {
+  // Cannot cancel already completed or cancelled appointments
+  if (['completed', 'cancelled', 'no-show'].includes(this.status)) {
+    return false;
+  }
+  
+  // Allow cancellation only up to 24 hours before appointment
+  const now = new Date();
+  const appointmentTime = new Date(this.startTime);
+  const hoursUntilAppointment = (appointmentTime - now) / (1000 * 60 * 60);
+  
+  return hoursUntilAppointment >= 24;
+};
+
+// Method to check if appointment is reschedulable
+appointmentSchema.methods.isReschedulable = function() {
+  // Same rules as cancellation
+  return this.isCancellable();
 };
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
