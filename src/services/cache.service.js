@@ -12,6 +12,11 @@ const cacheService = {
    * Default cache TTL in seconds (30 minutes)
    */
   DEFAULT_TTL: 30 * 60,
+  
+  /**
+   * TTL for static data (1 hour)
+   */
+  STATIC_DATA_TTL: 60 * 60,
 
   /**
    * Generate a cache key based on the input parameters
@@ -125,6 +130,92 @@ const cacheService = {
       logger.error(`Error clearing cache for pattern ${pattern}:`, error);
       return 0;
     }
+  },
+
+  /**
+   * Cache static data with appropriate TTL
+   * @param {string} key - Cache key for the static data
+   * @param {Function} dataFetchFn - Function to fetch the data if not in cache
+   * @param {number} ttl - Time to live in seconds (optional, defaults to 1 hour)
+   * @returns {Promise<Object>} The data, either from cache or freshly fetched
+   */
+  // ADDED: New method for caching static data
+  getOrSetStatic: async (key, dataFetchFn, ttl = cacheService.STATIC_DATA_TTL) => {
+    try {
+      // Try to get from cache first
+      const cachedData = await cacheService.get(key);
+      if (cachedData) {
+        return cachedData;
+      }
+      
+      // If not in cache, fetch fresh data
+      const freshData = await dataFetchFn();
+      
+      // Store in cache with TTL
+      await cacheService.set(key, freshData, ttl);
+      
+      return freshData;
+    } catch (error) {
+      logger.error(`Error in getOrSetStatic for key ${key}:`, error);
+      // If cache fails, still try to get fresh data
+      return await dataFetchFn();
+    }
+  },
+
+  /**
+   * Refresh static data in cache
+   * @param {string} key - Cache key for the static data
+   * @param {Function} dataFetchFn - Function to fetch the fresh data
+   * @param {number} ttl - Time to live in seconds (optional, defaults to 1 hour)
+   * @returns {Promise<Object>} The refreshed data
+   */
+  // ADDED: New method for refreshing static data
+  refreshStatic: async (key, dataFetchFn, ttl = cacheService.STATIC_DATA_TTL) => {
+    try {
+      // Fetch fresh data
+      const freshData = await dataFetchFn();
+      
+      // Update cache with new TTL
+      await cacheService.set(key, freshData, ttl);
+      
+      logger.info(`Refreshed static data cache for key: ${key}`);
+      return freshData;
+    } catch (error) {
+      logger.error(`Error refreshing static data for key ${key}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Cache multiple static data items with a common prefix
+   * @param {string} prefix - Common prefix for the cache keys
+   * @param {Object} itemsMap - Map of item IDs to data fetch functions
+   * @param {number} ttl - Time to live in seconds (optional, defaults to 1 hour)
+   * @returns {Promise<Object>} Object with item IDs as keys and data as values
+   */
+  // ADDED: New method for caching multiple static items
+  cacheStaticItems: async (prefix, itemsMap, ttl = cacheService.STATIC_DATA_TTL) => {
+    const results = {};
+    
+    await Promise.all(
+      Object.entries(itemsMap).map(async ([id, fetchFn]) => {
+        const key = `${prefix}:${id}`;
+        try {
+          results[id] = await cacheService.getOrSetStatic(key, fetchFn, ttl);
+        } catch (error) {
+          logger.error(`Error caching static item ${key}:`, error);
+          try {
+            // Try to get data directly as fallback
+            results[id] = await fetchFn();
+          } catch (innerError) {
+            logger.error(`Failed to get fallback data for ${key}:`, innerError);
+            results[id] = null;
+          }
+        }
+      })
+    );
+    
+    return results;
   }
 };
 
