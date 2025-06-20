@@ -15,7 +15,13 @@
     "lint:fix": "eslint . --fix",
     "populate-test-data": "node scripts/populateTestData.js",
     "prepare": "husky install",
-    "pre-commit": "lint-staged"
+    "pre-commit": "lint-staged",
+    
+    "metrics:coverage": "jest --coverage && codecov",
+    "metrics:performance": "node scripts/runPerformanceTests.js",
+    "metrics:report": "node scripts/generateMetricsReport.js",
+    "metrics:dashboard": "node scripts/startMetricsDashboard.js",
+    "monitor:prepare": "node scripts/prepareMetricsData.js"
   },
   "repository": {
     "type": "git",
@@ -41,7 +47,11 @@
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^6.0.5",
     "morgan": "^1.10.0",
-    "winston": "^3.3.3"
+    "winston": "^3.3.3",
+    
+    "prom-client": "^14.0.1",
+    "prometheus-api-metrics": "^3.2.1",
+    "response-time": "^2.3.2"
   },
   "devDependencies": {
     "eslint": "^7.32.0",
@@ -51,7 +61,16 @@
     "jest": "^27.1.0",
     "lint-staged": "^11.1.2",
     "nodemon": "^2.0.12",
-    "supertest": "^6.1.6"
+    "supertest": "^6.1.6",
+    
+    
+    "codecov": "^3.8.3",
+    "jest-junit": "^13.0.0",
+    "loadtest": "^5.2.0",
+    "autocannon": "^7.5.0",
+    "lighthouse": "^9.0.0",
+    "jest-sonar-reporter": "^2.0.0",
+    "sonarqube-scanner": "^2.8.1"
   },
   "engines": {
     "node": ">=14.0.0"
@@ -65,9 +84,34 @@
     ],
     "setupFilesAfterEnv": [
       "./tests/setup.js"
-    ]
+    ],
+    
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "json",
+      "html",
+      "cobertura"
+    ],
+    "reporters": [
+      "default",
+      "jest-junit"
+    ],
+    "testResultsProcessor": "jest-sonar-reporter"
   },
   "lint-staged": {
     "*.js": "eslint --cache --fix"
+  },
+  "jestSonar": {
+    "reportPath": "coverage",
+    "reportFile": "sonar-report.xml",
+    "indent": 4
+  },
+  "jest-junit": {
+    "outputDirectory": "coverage",
+    "outputName": "junit.xml",
+    "classNameTemplate": "{classname}",
+    "titleTemplate": "{title}",
+    "ancestorSeparator": " › "
   }
 }
