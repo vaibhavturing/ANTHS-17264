@@ -1,184 +1,115 @@
 // src/models/patient.model.js
 const mongoose = require('mongoose');
-const baseSchema = require('./baseSchema');
+const Schema = mongoose.Schema;
 
-// Schema for patient basic information
-const patientSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+const patientSchema = new Schema({
+  firstName: {
+    type: String,
     required: true,
-    unique: true
+    trim: true
+  },
+  lastName: {
+    type: String,
+    required: true,
+    trim: true
   },
   dateOfBirth: {
     type: Date,
-    required: true,
-    // Encrypt sensitive data
-    set: function(dob) {
-      return encryptField(dob.toString());
-    },
-    get: function(dob) {
-      return decryptField(dob);
-    }
+    required: true
   },
   gender: {
     type: String,
-    enum: ['male', 'female', 'other', 'prefer_not_to_say'],
+    enum: ['male', 'female', 'other', 'prefer-not-to-say'],
     required: true
   },
-  contactPhone: {
-    type: String,
-    required: true,
-    set: function(phone) {
-      return encryptField(phone);
-    },
-    get: function(phone) {
-      return decryptField(phone);
-    }
-  },
-  emergencyContact: {
-    name: {
+  contactInformation: {
+    email: {
       type: String,
-      required: true
-    },
-    relationship: {
-      type: String,
-      required: true
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true
     },
     phone: {
       type: String,
-      required: true,
-      set: function(phone) {
-        return encryptField(phone);
-      },
-      get: function(phone) {
-        return decryptField(phone);
-      }
+      required: true
+    },
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      zipCode: String,
+      country: String
     }
   },
-  address: {
-    street: {
-      type: String,
-      required: true,
-      set: function(val) {
-        return encryptField(val);
-      },
-      get: function(val) {
-        return decryptField(val);
-      }
-    },
-    city: {
-      type: String,
-      required: true
-    },
-    state: {
-      type: String,
-      required: true
-    },
-    zipCode: {
-      type: String,
-      required: true
-    },
-    country: {
-      type: String,
-      required: true,
-      default: 'USA'
-    }
+  emergencyContact: {
+    name: String,
+    relationship: String,
+    phone: String
   },
-  primaryPhysician: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
+  insuranceInformation: {
+    provider: String,
+    policyNumber: String,
+    groupNumber: String,
+    coverageDetails: String
   },
-  insuranceInfo: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'PatientInsurance'
-  }],
-  // Tracking consent for data sharing and communications
-  consents: [{
-    type: { 
-      type: String, 
-      enum: ['data_sharing', 'research', 'marketing', 'telehealth'],
-      required: true
-    },
-    given: {
-      type: Boolean,
-      default: false
-    },
-    date: {
-      type: Date,
-      default: Date.now
-    },
-    expirationDate: {
-      type: Date
-    },
-    documentReference: {
-      type: String
-    }
-  }]
-}, {
-  ...baseSchema.baseOptions,
-  toJSON: { 
-    getters: true,
-    virtuals: true
+  medicalHistory: {
+    allergies: [{
+      allergen: String,
+      severity: String,
+      reaction: String
+    }],
+    chronicConditions: [String],
+    surgeries: [{
+      procedure: String,
+      date: Date,
+      notes: String
+    }],
+    familyHistory: [String]
   },
-  toObject: { 
-    getters: true,
-    virtuals: true
+  primaryCareProvider: {
+    type: Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'deceased'],
+    default: 'active'
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  },
+  notes: {
+    type: String
   }
 });
 
-// Encryption/decryption utility functions using the app's encryption key
-function encryptField(text) {
-  if (!text) return text;
-  try {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(
-      'aes-256-cbc', 
-      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
-      iv
-    );
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return `${iv.toString('hex')}:${encrypted}`;
-  } catch (error) {
-    console.error('Encryption error:', error);
-    return text; // Fallback in case of error
-  }
-}
+// ADDED INDEXES FOR PERFORMANCE OPTIMIZATION
+// Index for name-based searches
+patientSchema.index({ firstName: 1, lastName: 1 });
 
-function decryptField(encryptedText) {
-  if (!encryptedText || !encryptedText.includes(':')) return encryptedText;
-  try {
-    const [ivHex, encrypted] = encryptedText.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv(
-      'aes-256-cbc', 
-      Buffer.from(config.ENCRYPTION_KEY, 'hex'), 
-      iv
-    );
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } catch (error) {
-    console.error('Decryption error:', error);
-    return encryptedText; // Return original value in case of error
-  }
-}
+// Index for date of birth searches
+patientSchema.index({ dateOfBirth: 1 });
 
-// Virtual for full name
-patientSchema.virtual('fullName').get(function() {
-  return `${this.firstName} ${this.lastName}`;
-});
+// Index for primary care provider lookups
+patientSchema.index({ primaryCareProvider: 1 });
 
-// Virtual for age calculation
-patientSchema.virtual('age').get(function() {
-  if (!this.dateOfBirth) return null;
-  const dob = new Date(decryptField(this.dateOfBirth));
-  const ageDifMs = Date.now() - dob.getTime();
-  const ageDate = new Date(ageDifMs);
-  return Math.abs(ageDate.getUTCFullYear() - 1970);
-});
+// Index for insurance provider searches
+patientSchema.index({ 'insuranceInformation.provider': 1 });
+
+// Text index for full-text search
+patientSchema.index(
+  { firstName: 'text', lastName: 'text', 'medicalHistory.chronicConditions': 'text', notes: 'text' },
+  { weights: { firstName: 10, lastName: 10, 'medicalHistory.chronicConditions': 5, notes: 1 } }
+);
+
+// Compound index for status + date
+patientSchema.index({ status: 1, createdAt: -1 });
 
 const Patient = mongoose.model('Patient', patientSchema);
 

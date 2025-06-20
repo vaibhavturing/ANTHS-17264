@@ -19,6 +19,7 @@ const appointmentValidator = require('../validators/appointment.validator');
 const dateUtils = require('../utils/date.util');
 const moment = require('moment');
 
+
 /**
  * Controller for appointment operations in the Healthcare Management Application
  */
