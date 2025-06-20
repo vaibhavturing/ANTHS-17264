@@ -9,6 +9,7 @@
     "test": "cross-env NODE_ENV=test jest --runInBand",
     "test:watch": "cross-env NODE_ENV=test jest --watchAll --runInBand",
     "lint": "eslint .",
+    "populate-test-data": "node scripts/populateTestData.js",
     "format": "prettier --write \"**/*.{js,json,md}\"",
     "prepare": "husky install"
   },
