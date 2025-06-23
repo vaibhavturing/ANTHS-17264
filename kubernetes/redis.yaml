@@ -1,0 +1,100 @@
+# Kubernetes Redis for stateless session management
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: healthcare-redis
+  namespace: healthcare
+  labels:
+    app: healthcare-redis
+    tier: cache
+spec:
+  serviceName: "healthcare-redis"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: healthcare-redis
+  template:
+    metadata:
+      labels:
+        app: healthcare-redis
+        tier: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:6-alpine
+        command:
+          - redis-server
+          - "/redis-config/redis.conf"
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          limits:
+            cpu: "300m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+        volumeMounts:
+        - name: redis-config
+          mountPath: /redis-config
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-config
+        configMap:
+          name: redis-config
+          items:
+          - key: redis.conf
+            path: redis.conf
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: healthcare
+data:
+  redis.conf: |
+    requirepass ${REDIS_PASSWORD}
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: healthcare-redis
+  namespace: healthcare
+  labels:
+    app: healthcare-redis
+    tier: cache
+spec:
+  selector:
+    app: healthcare-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  type: ClusterIP
