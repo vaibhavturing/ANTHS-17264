@@ -1,0 +1,134 @@
+{
+  "summary": {
+    "timestamp": "2023-12-01T12:00:00.000Z",
+    "testSuites": [
+      {
+        "name": "Search Functionality",
+        "before": {
+          "timestamp": "2023-11-01T10:00:00.000Z",
+          "averageTime": 2000,
+          "p95Time": 2300,
+          "queries": 12
+        },
+        "after": {
+          "timestamp": "2023-12-01T10:00:00.000Z",
+          "averageTime": 500,
+          "p95Time": 650,
+          "queries": 4
+        },
+        "improvement": {
+          "averageTime": 75,
+          "p95Time": 71.7,
+          "queries": 66.7
+        }
+      },
+      {
+        "name": "Appointment Booking",
+        "before": {
+          "timestamp": "2023-11-01T10:15:00.000Z",
+          "averageTime": 1500,
+          "p95Time": 1800,
+          "queries": 8
+        },
+        "after": {
+          "timestamp": "2023-12-01T10:15:00.000Z",
+          "averageTime": 300,
+          "p95Time": 420,
+          "queries": 3
+        },
+        "improvement": {
+          "averageTime": 80,
+          "p95Time": 76.7,
+          "queries": 62.5
+        }
+      },
+      {
+        "name": "Patient Medical History",
+        "before": {
+          "timestamp": "2023-11-01T10:30:00.000Z",
+          "averageTime": 1800,
+          "p95Time": 2200,
+          "queries": 15
+        },
+        "after": {
+          "timestamp": "2023-12-01T10:30:00.000Z",
+          "averageTime": 400,
+          "p95Time": 550,
+          "queries": 5
+        },
+        "improvement": {
+          "averageTime": 77.8,
+          "p95Time": 75,
+          "queries": 66.7
+        }
+      },
+      {
+        "name": "Dashboard Loading",
+        "before": {
+          "timestamp": "2023-11-01T10:45:00.000Z",
+          "averageTime": 3200,
+          "p95Time": 3800,
+          "queries": 24
+        },
+        "after": {
+          "timestamp": "2023-12-01T10:45:00.000Z",
+          "averageTime": 800,
+          "p95Time": 1100,
+          "queries": 10
+        },
+        "improvement": {
+          "averageTime": 75,
+          "p95Time": 71.1,
+          "queries": 58.3
+        }
+      },
+      {
+        "name": "Prescription Generation",
+        "before": {
+          "timestamp": "2023-11-01T11:00:00.000Z",
+          "averageTime": 1200,
+          "p95Time": 1450,
+          "queries": 7
+        },
+        "after": {
+          "timestamp": "2023-12-01T11:00:00.000Z",
+          "averageTime": 300,
+          "p95Time": 400,
+          "queries": 3
+        },
+        "improvement": {
+          "averageTime": 75,
+          "p95Time": 72.4,
+          "queries": 57.1
+        }
+      }
+    ],
+    "resourceUtilization": {
+      "memory": {
+        "before": 1024,
+        "after": 594,
+        "improvement": 42
+      },
+      "cpu": {
+        "before": 85,
+        "after": 55,
+        "improvement": 35.3
+      },
+      "databaseConnections": {
+        "before": 50,
+        "after": 20,
+        "improvement": 60
+      },
+      "networkTraffic": {
+        "before": 520,
+        "after": 182,
+        "improvement": 65
+      },
+      "storage": {
+        "before": 100,
+        "after": 30,
+        "improvement": 70
+      }
+    }
+  }
+}
