@@ -23,6 +23,7 @@ const searchRoutes = require('./search.routes'); // New route
 
 
 
+
 const communicationRoutes = require('./communication.routes');
 const patientCommunicationRoutes = require('./patient-communication.routes');
 const appointmentNotificationRoutes = require('./appointment-notification.routes');
