@@ -1,0 +1,140 @@
+# Prometheus alerting rules for Healthcare Management Application
+groups:
+- name: healthcare-app-alerts
+  rules:
+  
+  # CPU Usage Alerts
+  - alert: HighCpuUsage
+    expr: cpu_usage_percent > 70
+    for: 5m
+    labels:
+      severity: warning
+      service: healthcare-api
+    annotations:
+      summary: High CPU usage detected
+      description: "CPU usage is {{ printf \"%.1f\" $value }}% for the last 5 minutes (threshold: 70%)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-system-dashboard"
+  
+  - alert: CriticalCpuUsage
+    expr: cpu_usage_percent > 85
+    for: 2m
+    labels:
+      severity: critical
+      service: healthcare-api
+    annotations:
+      summary: Critical CPU usage detected
+      description: "CPU usage is {{ printf \"%.1f\" $value }}% for the last 2 minutes (threshold: 85%)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-system-dashboard"
+      runbook_url: "https://wiki.example.com/runbooks/high-cpu-usage"
+  
+  # Memory Usage Alerts
+  - alert: HighMemoryUsage
+    expr: memory_usage_bytes{type="system"} / node_memory_MemTotal_bytes * 100 > 80
+    for: 5m
+    labels:
+      severity: warning
+      service: healthcare-api
+    annotations:
+      summary: High memory usage detected
+      description: "Memory usage is {{ printf \"%.1f\" $value }}% for the last 5 minutes (threshold: 80%)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-system-dashboard"
+  
+  # API Response Time Alerts
+  - alert: SlowApiResponse
+    expr: http_request_duration_seconds{quantile="0.95"} > 0.5
+    for: 5m
+    labels:
+      severity: warning
+      service: healthcare-api
+    annotations:
+      summary: Slow API responses detected
+      description: "95th percentile of API response time is {{ printf \"%.2f\" $value }}s for the last 5 minutes (threshold: 0.5s)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-api-dashboard"
+  
+  - alert: CriticallySlowApiResponse
+    expr: http_request_duration_seconds{quantile="0.95"} > 1
+    for: 2m
+    labels:
+      severity: critical
+      service: healthcare-api
+    annotations:
+      summary: Critically slow API responses detected
+      description: "95th percentile of API response time is {{ printf \"%.2f\" $value }}s for the last 2 minutes (threshold: 1s)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-api-dashboard"
+      runbook_url: "https://wiki.example.com/runbooks/slow-api-response"
+  
+  # Business Metrics Alerts
+  - alert: HighAppointmentBookingRate
+    expr: rate(appointments_booked_total[1m]) > 10
+    for: 2m
+    labels:
+      severity: warning
+      service: healthcare-api
+      category: business
+    annotations:
+      summary: High appointment booking rate
+      description: "More than {{ printf \"%.1f\" $value }} appointments per minute are being booked (threshold: 10)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-business-dashboard"
+  
+  - alert: VeryHighAppointmentBookingRate
+    expr: rate(appointments_booked_total[1m]) > 20
+    for: 1m
+    labels:
+      severity: critical
+      service: healthcare-api
+      category: business
+    annotations:
+      summary: Very high appointment booking rate
+      description: "More than {{ printf \"%.1f\" $value }} appointments per minute are being booked (threshold: 20)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-business-dashboard"
+      runbook_url: "https://wiki.example.com/runbooks/high-appointment-rate"
+  
+  - alert: HighPatientRegistrationRate
+    expr: rate(patient_registrations_total[5m]) > 30
+    for: 5m
+    labels:
+      severity: warning
+      service: healthcare-api
+      category: business
+    annotations:
+      summary: High patient registration rate
+      description: "More than {{ printf \"%.1f\" $value }} patients per 5 minutes are being registered (threshold: 30)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-business-dashboard"
+  
+  - alert: HighPrescriptionRate
+    expr: rate(prescriptions_created_total[5m]) > 50
+    for: 5m
+    labels:
+      severity: warning
+      service: healthcare-api
+      category: business
+    annotations:
+      summary: High prescription creation rate
+      description: "More than {{ printf \"%.1f\" $value }} prescriptions per 5 minutes are being created (threshold: 50)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-business-dashboard"
+  
+  # Database Alerts
+  - alert: SlowDatabaseQueries
+    expr: db_query_duration_seconds{quantile="0.95"} > 0.1
+    for: 5m
+    labels:
+      severity: warning
+      service: healthcare-api
+      component: database
+    annotations:
+      summary: Slow database queries detected
+      description: "95th percentile of database query time is {{ printf \"%.2f\" $value }}s for the last 5 minutes (threshold: 0.1s)"
+      dashboard_url: "https://grafana.example.com/d/healthcare-database-dashboard"
+  
+  # Health Check Alerts
+  - alert: APIEndpointDown
+    expr: probe_success{job="healthcare-api-probe"} == 0
+    for: 2m
+    labels:
+      severity: critical
+      service: healthcare-api
+    annotations:
+      summary: API endpoint is down
+      description: "The API endpoint has been down for more than 2 minutes."
+      dashboard_url: "https://grafana.example.com/d/healthcare-health-dashboard"
+      runbook_url: "https://wiki.example.com/runbooks/api-down"

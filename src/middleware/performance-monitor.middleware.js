@@ -1,124 +1,98 @@
-// src/middleware/performance-monitor.middleware.js
-// Performance monitoring middleware to track API response times and resource usage
-// NEW FILE: Added for performance optimization
+/**
+ * Performance Monitoring Middleware
+ * Tracks response times and other performance metrics for API requests
+ */
 
+const metricsService = require('../services/metrics.service');
 const logger = require('../utils/logger');
-const { performance } = require('perf_hooks');
-const os = require('os');
+const monitoringConfig = require('../config/monitoring.config');
 
-// Performance stats in memory
-const stats = {
-  requests: 0,
-  responseTimes: [],
-  errors: 0,
-  requestsPerEndpoint: {},
-  slowestEndpoints: {},
-  lastReport: Date.now()
-};
-
-// Report interval in ms
-const REPORT_INTERVAL = 60000; // 1 minute
-
-// Generate performance report
-function generateReport() {
-  const now = Date.now();
-  
-  if (stats.responseTimes.length === 0) {
-    return; // No data to report
+/**
+ * Performance monitoring middleware
+ */
+const performanceMonitorMiddleware = (req, res, next) => {
+  // Skip monitoring for static assets and health checks
+  if (
+    req.path.startsWith('/assets') ||
+    req.path.startsWith('/public') || 
+    req.path === '/metrics' ||
+    req.path.startsWith('/api/health')
+  ) {
+    return next();
   }
   
-  // Calculate stats
-  const avgResponseTime = stats.responseTimes.reduce((sum, time) => sum + time, 0) / stats.responseTimes.length;
-  const maxResponseTime = Math.max(...stats.responseTimes);
-  const minResponseTime = Math.min(...stats.responseTimes);
-  const p95ResponseTime = stats.responseTimes.sort((a, b) => a - b)[Math.floor(stats.responseTimes.length * 0.95)];
+  // Record start time
+  const startTime = process.hrtime();
   
-  // System resource usage
-  const cpuUsage = os.loadavg()[0]; // 1 minute load average
-  const memoryUsage = process.memoryUsage();
-  const freeMem = os.freemem() / os.totalmem() * 100;
+  // Keep track of response size
+  let responseSize = 0;
+  const originalWrite = res.write;
+  const originalEnd = res.end;
   
-  // Top 5 slowest endpoints
-  const slowestEndpoints = Object.entries(stats.slowestEndpoints)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([endpoint, time]) => `${endpoint}: ${time.toFixed(2)}ms`);
+  // Override write to track response size
+  res.write = function(chunk, encoding) {
+    responseSize += chunk.length;
+    originalWrite.apply(res, arguments);
+  };
   
-  // Log the report
-  logger.info('Performance Report', {
-    timeframe: `${new Date(stats.lastReport).toISOString()} to ${new Date(now).toISOString()}`,
-    requests: stats.requests,
-    errors: stats.errors,
-    responseTimes: {
-      avg: avgResponseTime.toFixed(2),
-      min: minResponseTime.toFixed(2),
-      max: maxResponseTime.toFixed(2),
-      p95: p95ResponseTime.toFixed(2)
-    },
-    systemLoad: {
-      cpu: cpuUsage.toFixed(2),
-      memoryMB: (memoryUsage.rss / 1024 / 1024).toFixed(2),
-      freeMemoryPercent: freeMem.toFixed(2)
-    },
-    slowestEndpoints
-  });
-  
-  // Reset stats
-  stats.requests = 0;
-  stats.responseTimes = [];
-  stats.errors = 0;
-  stats.requestsPerEndpoint = {};
-  stats.lastReport = now;
-}
-
-// Performance monitoring middleware
-function performanceMonitor(req, res, next) {
-  const startTime = performance.now();
-  const url = req.originalUrl;
-  
-  // Track endpoint usage
-  if (!stats.requestsPerEndpoint[url]) {
-    stats.requestsPerEndpoint[url] = 0;
-  }
-  stats.requestsPerEndpoint[url]++;
-  
-  // Process the request and track performance
-  res.on('finish', () => {
-    const responseTime = performance.now() - startTime;
-    stats.requests++;
-    stats.responseTimes.push(responseTime);
+  // Override end to capture duration and record metrics
+  res.end = function(chunk, encoding) {
+    // Calculate duration
+    const hrDuration = process.hrtime(startTime);
+    const durationMs = (hrDuration[0] * 1000) + (hrDuration[1] / 1000000);
     
-    // Track errors
-    if (res.statusCode >= 400) {
-      stats.errors++;
+    // Count final chunk size
+    if (chunk) {
+      responseSize += chunk.length;
     }
     
-    // Track slowest endpoints
-    if (!stats.slowestEndpoints[url] || stats.slowestEndpoints[url] < responseTime) {
-      stats.slowestEndpoints[url] = responseTime;
+    // Call original end function
+    originalEnd.apply(res, arguments);
+    
+    // Record response time in metrics service
+    metricsService.recordHttpRequest(
+      req.method,
+      req.originalUrl || req.url,
+      res.statusCode,
+      durationMs
+    );
+    
+    // Log request if it's slow
+    if (durationMs > monitoringConfig.thresholds.responseTime.warning) {
+      logger.warn(
+        `Slow request: ${req.method} ${req.originalUrl || req.url} - ${durationMs.toFixed(2)}ms`,
+        {
+          method: req.method,
+          url: req.originalUrl || req.url,
+          statusCode: res.statusCode,
+          responseSize,
+          duration: durationMs,
+          userAgent: req.headers['user-agent'],
+          ip: req.ip
+        }
+      );
     }
     
-    // Log slow responses (over 500ms)
-    if (responseTime > 500) {
-      logger.warn(`Slow response: ${url} took ${responseTime.toFixed(2)}ms`, {
-        method: req.method,
-        statusCode: res.statusCode,
-        responseTime: responseTime.toFixed(2)
-      });
+    // Debug logging for all requests if enabled
+    if (process.env.DEBUG_PERFORMANCE === 'true') {
+      const logLevel = durationMs > monitoringConfig.thresholds.responseTime.warning 
+        ? 'warn' 
+        : 'debug';
+        
+      logger[logLevel](
+        `${req.method} ${req.originalUrl || req.url} - ${durationMs.toFixed(2)}ms - ${responseSize} bytes`,
+        {
+          method: req.method,
+          url: req.originalUrl || req.url,
+          statusCode: res.statusCode,
+          responseSize,
+          duration: durationMs
+        }
+      );
     }
-    
-    // Generate report if interval has passed
-    if (Date.now() - stats.lastReport > REPORT_INTERVAL) {
-      generateReport();
-    }
-  });
+  };
   
   next();
-}
-
-// Export middleware and utilities
-module.exports = {
-  performanceMonitor,
-  generateReport,
-  stats // Exported for testing purposes
 };
+
+module.exports = performanceMonitorMiddleware;
