@@ -1,5 +1,4 @@
-# Docker Compose for Healthcare Management Application
-# UPDATED: Added configuration for PostgreSQL with TDE and TLS support
+# docker-compose.yml (Updated with security measures)
 
 version: '3.8'
 
@@ -8,127 +7,96 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: healthcare-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    volumes:
-      - ./certs:/app/certs:ro
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
+      - "127.0.0.1:3000:3000"  # Only expose locally, use reverse proxy
     environment:
       - NODE_ENV=production
-      - TLS_ENABLED=true
-      - TLS_CERT_PATH=/app/certs/server-cert.pem
-      - TLS_KEY_PATH=/app/certs/server-key.pem
-      - MONGODB_URI=mongodb://mongodb:27017/healthcare
-      - MONGODB_TLS_ENABLED=true
-      - MONGODB_TLS_CA_FILE=/app/certs/mongodb-ca.pem
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=healthcare
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_CA_PATH=/app/certs/postgres-ca.pem
-      - REDIS_HOST=redis
-      - REDIS_TLS_ENABLED=true
-      - REDIS_CA_PATH=/app/certs/redis-ca.pem
-      - FIELD_ENCRYPTION_ENABLED=true
-      - FIELD_ENCRYPTION_PRIMARY_KEY=${FIELD_ENCRYPTION_PRIMARY_KEY}
-      - AWS_S3_REGION=${AWS_S3_REGION}
-      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_S3_KMS_KEY_ID=${AWS_S3_KMS_KEY_ID}
+      - DB_URI=${DB_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - LOG_LEVEL=info
+    volumes:
+      - ./logs:/app/logs:rw
     depends_on:
-      - mongodb
+      - mongo
       - postgres
-      - redis
     networks:
       - app-network
-
-  mongodb:
-    image: mongo:latest
-    container_name: healthcare-mongodb
+    # Security enhancements
+    cap_drop:
+      - ALL  # Drop all capabilities
+    cap_add:
+      - NET_BIND_SERVICE  # Add only what's needed
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+  
+  mongo:
+    image: mongo:5.0
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     volumes:
-      - mongodb-data:/data/db
-      - ./certs/mongo:/etc/ssl/mongo:ro
+      - mongo-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d
+    # No exposed ports - only accessible within Docker network
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
-    command: ["--tlsMode", "requireTLS", "--tlsCAFile", "/etc/ssl/mongo/ca.pem", "--tlsCertificateKeyFile", "/etc/ssl/mongo/mongodb.pem"]
     networks:
       - app-network
-
+    # Security enhancements
+    command: ["--auth", "--bind_ip_all", "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", "/mongo-certs/mongo.pem"]
+    volumes:
+      - ./mongo-certs:/mongo-certs:ro
+  
   postgres:
-    # Using an image with TDE support
-    image: enterprisedb/postgresql:14
-    container_name: healthcare-postgres
+    image: postgres:14
     restart: unless-stopped
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./certs/postgres:/etc/ssl/postgres:ro
-      - ./postgres/init:/docker-entrypoint-initdb.d
+      - ./postgres-init:/docker-entrypoint-initdb.d
+    # No exposed ports - only accessible within Docker network
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=healthcare
-      # TDE configuration options
-      - POSTGRES_INITDB_ARGS=--data-checksums
-      - POSTGRES_TDE_ENABLED=true
-      - POSTGRES_TDE_KEY=${POSTGRES_TDE_KEY}
+      - POSTGRES_DB=${POSTGRES_DB}
+    networks:
+      - app-network
     command: >
-      postgres
-      -c ssl=on
-      -c ssl_cert_file=/etc/ssl/postgres/server.crt
-      -c ssl_key_file=/etc/ssl/postgres/server.key
-      -c ssl_ca_file=/etc/ssl/postgres/ca.crt
-      -c ssl_prefer_server_ciphers=on
-      -c ssl_min_protocol_version=TLSv1.2
-    networks:
-      - app-network
-
-  redis:
-    image: redis:alpine
-    container_name: healthcare-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-      - ./certs/redis:/etc/ssl/redis:ro
-      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--tls-port", "6379", "--tls-cert-file", "/etc/ssl/redis/redis.crt", "--tls-key-file", "/etc/ssl/redis/redis.key", "--tls-ca-cert-file", "/etc/ssl/redis/ca.crt"]
-    networks:
-      - app-network
+      -c ssl=on 
+      -c ssl_cert_file=/postgres-certs/server.crt 
+      -c ssl_key_file=/postgres-certs/server.key
 
   nginx:
-    image: nginx:alpine
-    container_name: healthcare-nginx
+    image: nginx:1.21-alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf/sites-available:/etc/nginx/sites-available:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
-      - ./frontend/build:/usr/share/nginx/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./public:/usr/share/nginx/html:ro
     depends_on:
       - app
     networks:
       - app-network
-
-volumes:
-  mongodb-data:
-  postgres-data:
-  redis-data:
+    # Security enhancements
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  mongo-data:
+  postgres-data:
